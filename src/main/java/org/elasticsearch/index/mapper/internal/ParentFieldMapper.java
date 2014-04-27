@@ -1,13 +1,13 @@
 /*
- * Licensed to Elastic Search and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. Elastic Search licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,7 +16,6 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.index.mapper.internal;
 
 import org.apache.lucene.document.Field;
@@ -34,6 +33,7 @@ import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.lucene.BytesRefs;
 import org.elasticsearch.common.lucene.Lucene;
 import org.elasticsearch.common.lucene.search.Queries;
+import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.index.codec.postingsformat.PostingsFormatProvider;
@@ -75,6 +75,10 @@ public class ParentFieldMapper extends AbstractFieldMapper<Uid> implements Inter
 
     public static class Builder extends Mapper.Builder<Builder, ParentFieldMapper> {
 
+        private static final Settings FIELD_DATA_SETTINGS = ImmutableSettings.settingsBuilder()
+                .put(Loading.KEY, Loading.EAGER_VALUE)
+                .build();
+
         protected String indexName;
 
         private String type;
@@ -83,6 +87,7 @@ public class ParentFieldMapper extends AbstractFieldMapper<Uid> implements Inter
         public Builder() {
             super(Defaults.NAME);
             this.indexName = name;
+            builder = this;
         }
 
         public Builder type(String type) {
@@ -100,7 +105,7 @@ public class ParentFieldMapper extends AbstractFieldMapper<Uid> implements Inter
             if (type == null) {
                 throw new MapperParsingException("Parent mapping must contain the parent type");
             }
-            return new ParentFieldMapper(name, indexName, type, postingsFormat, null, context.indexSettings());
+            return new ParentFieldMapper(name, indexName, type, postingsFormat, FIELD_DATA_SETTINGS, context.indexSettings());
         }
     }
 
@@ -126,17 +131,14 @@ public class ParentFieldMapper extends AbstractFieldMapper<Uid> implements Inter
     private final BytesRef typeAsBytes;
 
     protected ParentFieldMapper(String name, String indexName, String type, PostingsFormatProvider postingsFormat, @Nullable Settings fieldDataSettings, Settings indexSettings) {
-        super(new Names(name, indexName, indexName, name), Defaults.BOOST, new FieldType(Defaults.FIELD_TYPE),
-                Lucene.KEYWORD_ANALYZER, Lucene.KEYWORD_ANALYZER, postingsFormat, null, null, fieldDataSettings, indexSettings);
+        super(new Names(name, indexName, indexName, name), Defaults.BOOST, new FieldType(Defaults.FIELD_TYPE), null,
+                Lucene.KEYWORD_ANALYZER, Lucene.KEYWORD_ANALYZER, postingsFormat, null, null, null, fieldDataSettings, indexSettings);
         this.type = type;
-        this.typeAsBytes = new BytesRef(type);
+        this.typeAsBytes = type == null ? null : new BytesRef(type);
     }
 
     public ParentFieldMapper() {
-        super(new Names(Defaults.NAME, Defaults.NAME, Defaults.NAME, Defaults.NAME), Defaults.BOOST, new FieldType(Defaults.FIELD_TYPE),
-                Lucene.KEYWORD_ANALYZER, Lucene.KEYWORD_ANALYZER, null, null, null, null, null);
-        type = null;
-        typeAsBytes = null;
+        this(Defaults.NAME, Defaults.NAME, null, null, null, null);
     }
 
     public String type() {
@@ -150,7 +152,7 @@ public class ParentFieldMapper extends AbstractFieldMapper<Uid> implements Inter
 
     @Override
     public FieldDataType defaultFieldDataType() {
-        return new FieldDataType("string");
+        return new FieldDataType("_parent");
     }
 
     @Override
@@ -264,7 +266,7 @@ public class ParentFieldMapper extends AbstractFieldMapper<Uid> implements Inter
             return new TermFilter(new Term(names.indexName(), bValue));
         }
 
-        List<String> types = new ArrayList<String>(context.mapperService().types().size());
+        List<String> types = new ArrayList<>(context.mapperService().types().size());
         for (DocumentMapper documentMapper : context.mapperService()) {
             if (!documentMapper.parentFieldMapper().active()) {
                 types.add(documentMapper.type());
@@ -277,7 +279,7 @@ public class ParentFieldMapper extends AbstractFieldMapper<Uid> implements Inter
             return new TermFilter(new Term(names.indexName(), Uid.createUidAsBytes(types.get(0), bValue)));
         } else {
             // we use all non child types, cause we don't know if its exact or not...
-            List<BytesRef> typesValues = new ArrayList<BytesRef>(types.size());
+            List<BytesRef> typesValues = new ArrayList<>(types.size());
             for (String type : context.mapperService().types()) {
                 typesValues.add(Uid.createUidAsBytes(type, bValue));
             }
@@ -295,14 +297,14 @@ public class ParentFieldMapper extends AbstractFieldMapper<Uid> implements Inter
             return termFilter(values.get(0), context);
         }
 
-        List<String> types = new ArrayList<String>(context.mapperService().types().size());
+        List<String> types = new ArrayList<>(context.mapperService().types().size());
         for (DocumentMapper documentMapper : context.mapperService()) {
             if (!documentMapper.parentFieldMapper().active()) {
                 types.add(documentMapper.type());
             }
         }
 
-        List<BytesRef> bValues = new ArrayList<BytesRef>(values.size());
+        List<BytesRef> bValues = new ArrayList<>(values.size());
         for (Object value : values) {
             BytesRef bValue = BytesRefs.toBytesRef(value);
             if (Uid.hasDelimiter(bValue)) {

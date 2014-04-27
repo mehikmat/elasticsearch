@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,6 +19,7 @@
 package org.elasticsearch.benchmark.cluster;
 
 import com.google.common.collect.ImmutableMap;
+import org.elasticsearch.cluster.ClusterName;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.metadata.IndexMetaData;
 import org.elasticsearch.cluster.metadata.MetaData;
@@ -35,7 +36,6 @@ import org.elasticsearch.test.ElasticsearchAllocationTestCase;
 import java.util.Random;
 
 import static org.elasticsearch.cluster.routing.ShardRoutingState.INITIALIZING;
-import static org.elasticsearch.cluster.routing.allocation.RoutingAllocationTests.newNode;
 
 public class ClusterAllocationRerouteBenchmark {
 
@@ -64,9 +64,9 @@ public class ClusterAllocationRerouteBenchmark {
         RoutingTable routingTable = rb.build();
         DiscoveryNodes.Builder nb = DiscoveryNodes.builder();
         for (int i = 1; i <= numberOfNodes; i++) {
-            nb.put(newNode("node" + i, numberOfTags == 0 ? ImmutableMap.<String, String>of() : ImmutableMap.of("tag", "tag_" + (i % numberOfTags))));
+            nb.put(ElasticsearchAllocationTestCase.newNode("node" + i, numberOfTags == 0 ? ImmutableMap.<String, String>of() : ImmutableMap.of("tag", "tag_" + (i % numberOfTags))));
         }
-        ClusterState initialClusterState = ClusterState.builder().metaData(metaData).routingTable(routingTable).nodes(nb).build();
+        ClusterState initialClusterState = ClusterState.builder(ClusterName.DEFAULT).metaData(metaData).routingTable(routingTable).nodes(nb).build();
 
         long start = System.currentTimeMillis();
         for (int i = 0; i < numberOfRuns; i++) {

@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -21,20 +21,24 @@ package org.elasticsearch.transport.netty;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
-import org.elasticsearch.ElasticSearchException;
-import org.elasticsearch.ElasticSearchIllegalArgumentException;
-import org.elasticsearch.ElasticSearchIllegalStateException;
+import org.elasticsearch.ElasticsearchException;
+import org.elasticsearch.ElasticsearchIllegalArgumentException;
+import org.elasticsearch.ElasticsearchIllegalStateException;
 import org.elasticsearch.Version;
 import org.elasticsearch.cluster.node.DiscoveryNode;
 import org.elasticsearch.common.Strings;
+import org.elasticsearch.common.bytes.ReleasableBytesReference;
 import org.elasticsearch.common.component.AbstractLifecycleComponent;
 import org.elasticsearch.common.compress.CompressorFactory;
 import org.elasticsearch.common.inject.Inject;
-import org.elasticsearch.common.io.stream.BytesStreamOutput;
 import org.elasticsearch.common.io.stream.HandlesStreamOutput;
+import org.elasticsearch.common.io.stream.ReleasableBytesStreamOutput;
 import org.elasticsearch.common.io.stream.StreamOutput;
+import org.elasticsearch.common.lease.Releasables;
+import org.elasticsearch.common.math.MathUtils;
 import org.elasticsearch.common.netty.NettyStaticSetup;
 import org.elasticsearch.common.netty.OpenChannelsHandler;
+import org.elasticsearch.common.netty.ReleaseChannelFutureListener;
 import org.elasticsearch.common.network.NetworkService;
 import org.elasticsearch.common.network.NetworkUtils;
 import org.elasticsearch.common.settings.Settings;
@@ -44,6 +48,7 @@ import org.elasticsearch.common.transport.PortsRange;
 import org.elasticsearch.common.transport.TransportAddress;
 import org.elasticsearch.common.unit.ByteSizeValue;
 import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.common.util.BigArrays;
 import org.elasticsearch.common.util.concurrent.EsExecutors;
 import org.elasticsearch.common.util.concurrent.KeyedLock;
 import org.elasticsearch.monitor.jvm.JvmInfo;
@@ -114,6 +119,8 @@ public class NettyTransport extends AbstractLifecycleComponent<Transport> implem
 
     final String publishHost;
 
+    final int publishPort;
+
     final boolean compress;
 
     final TimeValue connectTimeout;
@@ -137,6 +144,8 @@ public class NettyTransport extends AbstractLifecycleComponent<Transport> implem
     final ByteSizeValue maxCumulationBufferCapacity;
     final int maxCompositeBufferComponents;
 
+    final BigArrays bigArrays;
+
     private final ThreadPool threadPool;
 
     private volatile OpenChannelsHandler serverOpenChannels;
@@ -155,17 +164,18 @@ public class NettyTransport extends AbstractLifecycleComponent<Transport> implem
 
     private volatile BoundTransportAddress boundAddress;
 
-    private final KeyedLock<String> connectionLock = new KeyedLock<String>();
+    private final KeyedLock<String> connectionLock = new KeyedLock<>();
 
     // this lock is here to make sure we close this transport and disconnect all the client nodes
     // connections while no connect operations is going on... (this might help with 100% CPU when stopping the transport?)
     private final ReadWriteLock globalLock = new ReentrantReadWriteLock();
 
     @Inject
-    public NettyTransport(Settings settings, ThreadPool threadPool, NetworkService networkService, Version version) {
+    public NettyTransport(Settings settings, ThreadPool threadPool, NetworkService networkService, BigArrays bigArrays, Version version) {
         super(settings);
         this.threadPool = threadPool;
         this.networkService = networkService;
+        this.bigArrays = bigArrays;
         this.version = version;
 
         if (settings.getAsBoolean("netty.epollBugWorkaround", false)) {
@@ -179,6 +189,7 @@ public class NettyTransport extends AbstractLifecycleComponent<Transport> implem
         this.port = componentSettings.get("port", settings.get("transport.tcp.port", "9300-9400"));
         this.bindHost = componentSettings.get("bind_host", settings.get("transport.bind_host", settings.get("transport.host")));
         this.publishHost = componentSettings.get("publish_host", settings.get("transport.publish_host", settings.get("transport.host")));
+        this.publishPort = componentSettings.getAsInt("publish_port", settings.getAsInt("transport.publish_port", 0));
         this.compress = settings.getAsBoolean(TransportSettings.TRANSPORT_TCP_COMPRESS, false);
         this.connectTimeout = componentSettings.getAsTime("connect_timeout", settings.getAsTime("transport.tcp.connect_timeout", settings.getAsTime(TCP_CONNECT_TIMEOUT, TCP_DEFAULT_CONNECT_TIMEOUT)));
         this.tcpNoDelay = componentSettings.getAsBoolean("tcp_no_delay", settings.getAsBoolean(TCP_NO_DELAY, true));
@@ -194,13 +205,13 @@ public class NettyTransport extends AbstractLifecycleComponent<Transport> implem
 
         // we want to have at least 1 for reg/state/ping
         if (this.connectionsPerNodeReg == 0) {
-            throw new ElasticSearchIllegalArgumentException("can't set [connection_per_node.reg] to 0");
+            throw new ElasticsearchIllegalArgumentException("can't set [connection_per_node.reg] to 0");
         }
         if (this.connectionsPerNodePing == 0) {
-            throw new ElasticSearchIllegalArgumentException("can't set [connection_per_node.ping] to 0");
+            throw new ElasticsearchIllegalArgumentException("can't set [connection_per_node.ping] to 0");
         }
         if (this.connectionsPerNodeState == 0) {
-            throw new ElasticSearchIllegalArgumentException("can't set [connection_per_node.state] to 0");
+            throw new ElasticsearchIllegalArgumentException("can't set [connection_per_node.state] to 0");
         }
 
         this.maxCumulationBufferCapacity = componentSettings.getAsBytesSize("max_cumulation_buffer_capacity", null);
@@ -244,7 +255,7 @@ public class NettyTransport extends AbstractLifecycleComponent<Transport> implem
     }
 
     @Override
-    protected void doStart() throws ElasticSearchException {
+    protected void doStart() throws ElasticsearchException {
         if (blockingClient) {
             clientBootstrap = new ClientBootstrap(new OioClientSocketChannelFactory(Executors.newCachedThreadPool(daemonThreadFactory(settings, "transport_client_worker"))));
         } else {
@@ -360,7 +371,7 @@ public class NettyTransport extends AbstractLifecycleComponent<Transport> implem
         final InetAddress hostAddress = hostAddressX;
 
         PortsRange portsRange = new PortsRange(port);
-        final AtomicReference<Exception> lastException = new AtomicReference<Exception>();
+        final AtomicReference<Exception> lastException = new AtomicReference<>();
         boolean success = portsRange.iterate(new PortsRange.PortCallback() {
             @Override
             public boolean onPortNumber(int portNumber) {
@@ -381,8 +392,12 @@ public class NettyTransport extends AbstractLifecycleComponent<Transport> implem
 
         InetSocketAddress boundAddress = (InetSocketAddress) serverChannel.getLocalAddress();
         InetSocketAddress publishAddress;
+        int publishPort = this.publishPort;
+        if (0 == publishPort) {
+            publishPort = boundAddress.getPort();
+        }
         try {
-            publishAddress = new InetSocketAddress(networkService.resolvePublishHostAddress(publishHost), boundAddress.getPort());
+            publishAddress = new InetSocketAddress(networkService.resolvePublishHostAddress(publishHost), publishPort);
         } catch (Exception e) {
             throw new BindTransportException("Failed to resolve publish address", e);
         }
@@ -390,7 +405,7 @@ public class NettyTransport extends AbstractLifecycleComponent<Transport> implem
     }
 
     @Override
-    protected void doStop() throws ElasticSearchException {
+    protected void doStop() throws ElasticsearchException {
         final CountDownLatch latch = new CountDownLatch(1);
         // make sure we run it on another thread than a possible IO handler thread
         threadPool.generic().execute(new Runnable() {
@@ -447,7 +462,7 @@ public class NettyTransport extends AbstractLifecycleComponent<Transport> implem
     }
 
     @Override
-    protected void doClose() throws ElasticSearchException {
+    protected void doClose() throws ElasticsearchException {
     }
 
     @Override
@@ -539,58 +554,58 @@ public class NettyTransport extends AbstractLifecycleComponent<Transport> implem
         byte status = 0;
         status = TransportStatus.setRequest(status);
 
-        BytesStreamOutput bStream = new BytesStreamOutput();
-        bStream.skip(NettyHeader.HEADER_SIZE);
-        StreamOutput stream = bStream;
-        // only compress if asked, and, the request is not bytes, since then only
-        // the header part is compressed, and the "body" can't be extracted as compressed
-        if (options.compress() && (!(request instanceof BytesTransportRequest))) {
-            status = TransportStatus.setCompress(status);
-            stream = CompressorFactory.defaultCompressor().streamOutput(stream);
+        ReleasableBytesStreamOutput bStream = new ReleasableBytesStreamOutput(bigArrays);
+        boolean addedReleaseListener = false;
+        try {
+            bStream.skip(NettyHeader.HEADER_SIZE);
+            StreamOutput stream = bStream;
+            // only compress if asked, and, the request is not bytes, since then only
+            // the header part is compressed, and the "body" can't be extracted as compressed
+            if (options.compress() && (!(request instanceof BytesTransportRequest))) {
+                status = TransportStatus.setCompress(status);
+                stream = CompressorFactory.defaultCompressor().streamOutput(stream);
+            }
+            stream = new HandlesStreamOutput(stream);
+
+            // we pick the smallest of the 2, to support both backward and forward compatibility
+            // note, this is the only place we need to do this, since from here on, we use the serialized version
+            // as the version to use also when the node receiving this request will send the response with
+            Version version = Version.smallest(this.version, node.version());
+
+            stream.setVersion(version);
+            stream.writeString(action);
+
+            ReleasableBytesReference bytes;
+            ChannelBuffer buffer;
+            // it might be nice to somehow generalize this optimization, maybe a smart "paged" bytes output
+            // that create paged channel buffers, but its tricky to know when to do it (where this option is
+            // more explicit).
+            if (request instanceof BytesTransportRequest) {
+                BytesTransportRequest bRequest = (BytesTransportRequest) request;
+                assert node.version().equals(bRequest.version());
+                bRequest.writeThin(stream);
+                stream.close();
+                bytes = bStream.bytes();
+                ChannelBuffer headerBuffer = bytes.toChannelBuffer();
+                ChannelBuffer contentBuffer = bRequest.bytes().toChannelBuffer();
+                // false on gathering, cause gathering causes the NIO layer to combine the buffers into a single direct buffer....
+                buffer = new CompositeChannelBuffer(headerBuffer.order(), ImmutableList.<ChannelBuffer>of(headerBuffer, contentBuffer), false);
+            } else {
+                request.writeTo(stream);
+                stream.close();
+                bytes = bStream.bytes();
+                buffer = bytes.toChannelBuffer();
+            }
+            NettyHeader.writeHeader(buffer, requestId, status, version);
+            ChannelFuture future = targetChannel.write(buffer);
+            ReleaseChannelFutureListener listener = new ReleaseChannelFutureListener(bytes);
+            future.addListener(listener);
+            addedReleaseListener = true;
+        } finally {
+            if (!addedReleaseListener) {
+                Releasables.close(bStream.bytes());
+            }
         }
-        stream = new HandlesStreamOutput(stream);
-
-        // we pick the smallest of the 2, to support both backward and forward compatibility
-        // note, this is the only place we need to do this, since from here on, we use the serialized version
-        // as the version to use also when the node receiving this request will send the response with
-        Version version = Version.smallest(this.version, node.version());
-
-        stream.setVersion(version);
-        stream.writeString(action);
-
-        ChannelBuffer buffer;
-        // it might be nice to somehow generalize this optimization, maybe a smart "paged" bytes output
-        // that create paged channel buffers, but its tricky to know when to do it (where this option is
-        // more explicit).
-        if (request instanceof BytesTransportRequest) {
-            BytesTransportRequest bRequest = (BytesTransportRequest) request;
-            assert node.version().equals(bRequest.version());
-            bRequest.writeThin(stream);
-            stream.close();
-            ChannelBuffer headerBuffer = bStream.bytes().toChannelBuffer();
-            ChannelBuffer contentBuffer = bRequest.bytes().toChannelBuffer();
-            // false on gathering, cause gathering causes the NIO layer to combine the buffers into a single direct buffer....
-            buffer = new CompositeChannelBuffer(headerBuffer.order(), ImmutableList.<ChannelBuffer>of(headerBuffer, contentBuffer), false);
-        } else {
-            request.writeTo(stream);
-            stream.close();
-            buffer = bStream.bytes().toChannelBuffer();
-        }
-        NettyHeader.writeHeader(buffer, requestId, status, version);
-        targetChannel.write(buffer);
-
-        // We handle close connection exception in the #exceptionCaught method, which is the main reason we want to add this future
-//        channelFuture.addListener(new ChannelFutureListener() {
-//            @Override public void operationComplete(ChannelFuture future) throws Exception {
-//                if (!future.isSuccess()) {
-//                    // maybe add back the retry?
-//                    TransportResponseHandler handler = transportServiceAdapter.remove(requestId);
-//                    if (handler != null) {
-//                        handler.handleException(new RemoteTransportException("Failed write request", new SendRequestTransportException(node, action, future.getCause())));
-//                    }
-//                }
-//            }
-//        });
     }
 
     @Override
@@ -610,7 +625,7 @@ public class NettyTransport extends AbstractLifecycleComponent<Transport> implem
 
     public void connectToNode(DiscoveryNode node, boolean light) {
         if (!lifecycle.started()) {
-            throw new ElasticSearchIllegalStateException("can't add nodes to a stopped transport");
+            throw new ElasticsearchIllegalStateException("can't add nodes to a stopped transport");
         }
         if (node == null) {
             throw new ConnectTransportException(null, "can't connect to a null node");
@@ -618,7 +633,7 @@ public class NettyTransport extends AbstractLifecycleComponent<Transport> implem
         globalLock.readLock().lock();
         try {
             if (!lifecycle.started()) {
-                throw new ElasticSearchIllegalStateException("can't add nodes to a stopped transport");
+                throw new ElasticsearchIllegalStateException("can't add nodes to a stopped transport");
             }
             NodeChannels nodeChannels = connectedNodes.get(node);
             if (nodeChannels != null) {
@@ -627,7 +642,7 @@ public class NettyTransport extends AbstractLifecycleComponent<Transport> implem
             connectionLock.acquire(node.id());
             try {
                 if (!lifecycle.started()) {
-                    throw new ElasticSearchIllegalStateException("can't add nodes to a stopped transport");
+                    throw new ElasticsearchIllegalStateException("can't add nodes to a stopped transport");
                 }
                 try {
 
@@ -904,22 +919,22 @@ public class NettyTransport extends AbstractLifecycleComponent<Transport> implem
 
         public Channel channel(TransportRequestOptions.Type type) {
             if (type == TransportRequestOptions.Type.REG) {
-                return reg[Math.abs(regCounter.incrementAndGet()) % reg.length];
+                return reg[MathUtils.mod(regCounter.incrementAndGet(), reg.length)];
             } else if (type == TransportRequestOptions.Type.STATE) {
-                return state[Math.abs(stateCounter.incrementAndGet()) % state.length];
+                return state[MathUtils.mod(stateCounter.incrementAndGet(), state.length)];
             } else if (type == TransportRequestOptions.Type.PING) {
-                return ping[Math.abs(pingCounter.incrementAndGet()) % ping.length];
+                return ping[MathUtils.mod(pingCounter.incrementAndGet(), ping.length)];
             } else if (type == TransportRequestOptions.Type.BULK) {
-                return bulk[Math.abs(bulkCounter.incrementAndGet()) % bulk.length];
+                return bulk[MathUtils.mod(bulkCounter.incrementAndGet(), bulk.length)];
             } else if (type == TransportRequestOptions.Type.RECOVERY) {
-                return recovery[Math.abs(recoveryCounter.incrementAndGet()) % recovery.length];
+                return recovery[MathUtils.mod(recoveryCounter.incrementAndGet(), recovery.length)];
             } else {
-                throw new ElasticSearchIllegalArgumentException("no type channel for [" + type + "]");
+                throw new ElasticsearchIllegalArgumentException("no type channel for [" + type + "]");
             }
         }
 
         public synchronized void close() {
-            List<ChannelFuture> futures = new ArrayList<ChannelFuture>();
+            List<ChannelFuture> futures = new ArrayList<>();
             closeChannelsAndWait(recovery, futures);
             closeChannelsAndWait(bulk, futures);
             closeChannelsAndWait(reg, futures);

@@ -1,13 +1,13 @@
 /*
- * Licensed to Elastic Search and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. Elastic Search licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,14 +16,13 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.rest.action.percolate;
 
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.get.GetRequest;
 import org.elasticsearch.action.percolate.PercolateRequest;
 import org.elasticsearch.action.percolate.PercolateResponse;
-import org.elasticsearch.action.support.IgnoreIndices;
+import org.elasticsearch.action.support.IndicesOptions;
 import org.elasticsearch.action.support.broadcast.BroadcastOperationThreading;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.common.Strings;
@@ -33,7 +32,7 @@ import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.index.VersionType;
 import org.elasticsearch.rest.*;
 import org.elasticsearch.rest.action.support.RestActions;
-import org.elasticsearch.rest.action.support.RestXContentBuilder;
+import org.elasticsearch.rest.action.support.RestToXContentListener;
 
 import java.io.IOException;
 
@@ -70,13 +69,9 @@ public class RestPercolateAction extends BaseRestHandler {
         percolateRequest.documentType(restRequest.param("type"));
         percolateRequest.routing(restRequest.param("routing"));
         percolateRequest.preference(restRequest.param("preference"));
-        percolateRequest.source(restRequest.content(), restRequest.contentUnsafe());
+        percolateRequest.source(RestActions.getRestContent(restRequest), restRequest.contentUnsafe());
 
-        percolateRequest.routing(restRequest.param("routing"));
-        percolateRequest.preference(restRequest.param("preference"));
-        if (restRequest.hasParam("ignore_indices")) {
-            percolateRequest.ignoreIndices(IgnoreIndices.fromString(restRequest.param("ignore_indices")));
-        }
+        percolateRequest.indicesOptions(IndicesOptions.fromRequest(restRequest, percolateRequest.indicesOptions()));
         executePercolate(percolateRequest, restRequest, restChannel);
     }
 
@@ -91,7 +86,7 @@ public class RestPercolateAction extends BaseRestHandler {
         getRequest.routing(restRequest.param("routing"));
         getRequest.preference(restRequest.param("preference"));
         getRequest.refresh(restRequest.paramAsBoolean("refresh", getRequest.refresh()));
-        getRequest.realtime(restRequest.paramAsBooleanOptional("realtime", null));
+        getRequest.realtime(restRequest.paramAsBoolean("realtime", null));
         getRequest.version(RestActions.parseVersion(restRequest));
         getRequest.versionType(VersionType.fromString(restRequest.param("version_type"), getRequest.versionType()));
 
@@ -100,12 +95,7 @@ public class RestPercolateAction extends BaseRestHandler {
         percolateRequest.preference(restRequest.param("percolate_preference"));
         percolateRequest.source(restRequest.content(), restRequest.contentUnsafe());
 
-        percolateRequest.routing(restRequest.param("percolate_routing"));
-        percolateRequest.preference(restRequest.param("percolate_preference"));
-
-        if (restRequest.hasParam("ignore_indices")) {
-            percolateRequest.ignoreIndices(IgnoreIndices.fromString(restRequest.param("ignore_indices")));
-        }
+        percolateRequest.indicesOptions(IndicesOptions.fromRequest(restRequest, percolateRequest.indicesOptions()));
         executePercolate(percolateRequest, restRequest, restChannel);
     }
 
@@ -122,27 +112,7 @@ public class RestPercolateAction extends BaseRestHandler {
             percolateRequest.operationThreading(operationThreading);
         }
 
-        client.percolate(percolateRequest, new ActionListener<PercolateResponse>() {
-            @Override
-            public void onResponse(PercolateResponse response) {
-                try {
-                    XContentBuilder builder = RestXContentBuilder.restContentBuilder(restRequest);
-                    response.toXContent(builder, restRequest);
-                    restChannel.sendResponse(new XContentRestResponse(restRequest, OK, builder));
-                } catch (Throwable e) {
-                    onFailure(e);
-                }
-            }
-
-            @Override
-            public void onFailure(Throwable e) {
-                try {
-                    restChannel.sendResponse(new XContentThrowableRestResponse(restRequest, e));
-                } catch (IOException e1) {
-                    logger.error("Failed to send failure response", e1);
-                }
-            }
-        });
+        client.percolate(percolateRequest, new RestToXContentListener<PercolateResponse>(restChannel));
     }
 
     @Override

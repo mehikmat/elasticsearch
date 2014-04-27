@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -34,6 +34,7 @@ import org.apache.lucene.codecs.memory.MemoryPostingsFormat;
 import org.apache.lucene.codecs.perfield.PerFieldPostingsFormat;
 import org.apache.lucene.codecs.pulsing.Pulsing41PostingsFormat;
 import org.apache.lucene.codecs.simpletext.SimpleTextCodec;
+import org.elasticsearch.common.inject.AbstractModule;
 import org.elasticsearch.common.inject.Injector;
 import org.elasticsearch.common.inject.ModulesBuilder;
 import org.elasticsearch.common.settings.ImmutableSettings;
@@ -52,6 +53,8 @@ import org.elasticsearch.index.mapper.internal.UidFieldMapper;
 import org.elasticsearch.index.mapper.internal.VersionFieldMapper;
 import org.elasticsearch.index.settings.IndexSettingsModule;
 import org.elasticsearch.index.similarity.SimilarityModule;
+import org.elasticsearch.indices.fielddata.breaker.CircuitBreakerService;
+import org.elasticsearch.indices.fielddata.breaker.DummyCircuitBreakerService;
 import org.elasticsearch.test.ElasticsearchLuceneTestCase;
 import org.junit.Before;
 import org.junit.Test;
@@ -88,10 +91,10 @@ public class CodecTests extends ElasticsearchLuceneTestCase {
     public void testResolveDefaultPostingFormats() throws Exception {
         PostingsFormatService postingsFormatService = createCodecService().postingsFormatService();
         assertThat(postingsFormatService.get("default"), instanceOf(PreBuiltPostingsFormatProvider.class));
-        assertThat(postingsFormatService.get("default").get(), instanceOf(ElasticSearch090PostingsFormat.class));
+        assertThat(postingsFormatService.get("default").get(), instanceOf(Elasticsearch090PostingsFormat.class));
 
         // Should fail when upgrading Lucene with codec changes
-        assertThat(((ElasticSearch090PostingsFormat)postingsFormatService.get("default").get()).getDefaultWrapped(), instanceOf(((PerFieldPostingsFormat) Codec.getDefault().postingsFormat()).getPostingsFormatForField("").getClass()));
+        assertThat(((Elasticsearch090PostingsFormat)postingsFormatService.get("default").get()).getDefaultWrapped(), instanceOf(((PerFieldPostingsFormat) Codec.getDefault().postingsFormat()).getPostingsFormatForField("").getClass()));
         assertThat(postingsFormatService.get("Lucene41"), instanceOf(PreBuiltPostingsFormatProvider.class));
         // Should fail when upgrading Lucene with codec changes
         assertThat(postingsFormatService.get("Lucene41").get(), instanceOf(((PerFieldPostingsFormat) Codec.getDefault().postingsFormat()).getPostingsFormatForField(null).getClass()));
@@ -160,7 +163,7 @@ public class CodecTests extends ElasticsearchLuceneTestCase {
         CodecService codecService = createCodecService(indexSettings);
         DocumentMapper documentMapper = codecService.mapperService().documentMapperParser().parse(mapping);
         assertThat(documentMapper.mappers().name("field1").mapper().postingsFormatProvider(), instanceOf(PreBuiltPostingsFormatProvider.class));
-        assertThat(documentMapper.mappers().name("field1").mapper().postingsFormatProvider().get(), instanceOf(ElasticSearch090PostingsFormat.class));
+        assertThat(documentMapper.mappers().name("field1").mapper().postingsFormatProvider().get(), instanceOf(Elasticsearch090PostingsFormat.class));
 
         assertThat(documentMapper.mappers().name("field2").mapper().postingsFormatProvider(), instanceOf(DefaultPostingsFormatProvider.class));
         DefaultPostingsFormatProvider provider = (DefaultPostingsFormatProvider) documentMapper.mappers().name("field2").mapper().postingsFormatProvider();
@@ -414,6 +417,12 @@ public class CodecTests extends ElasticsearchLuceneTestCase {
                 .add(new CodecModule(settings))
                 .add(new MapperServiceModule())
                 .add(new AnalysisModule(settings))
+                .add(new AbstractModule() {
+                    @Override
+                    protected void configure() {
+                        bind(CircuitBreakerService.class).to(DummyCircuitBreakerService.class);
+                    }
+                })
                 .createInjector();
         return injector.getInstance(CodecService.class);
     }

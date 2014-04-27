@@ -1,3 +1,22 @@
+/*
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 package org.elasticsearch.search.aggregations.bucket.terms;
 
 import org.elasticsearch.common.xcontent.XContentBuilder;
@@ -14,6 +33,7 @@ public class TermsBuilder extends ValuesSourceAggregationBuilder<TermsBuilder> {
 
     private int size = -1;
     private int shardSize = -1;
+    private long minDocCount = -1;
     private Terms.ValueType valueType;
     private Terms.Order order;
     private String includePattern;
@@ -40,6 +60,14 @@ public class TermsBuilder extends ValuesSourceAggregationBuilder<TermsBuilder> {
      */
     public TermsBuilder shardSize(int shardSize) {
         this.shardSize = shardSize;
+        return this;
+    }
+
+    /**
+     * Set the minimum document count terms should have in order to appear in the response.
+     */
+    public TermsBuilder minDocCount(long minDocCount) {
+        this.minDocCount = minDocCount;
         return this;
     }
 
@@ -115,6 +143,9 @@ public class TermsBuilder extends ValuesSourceAggregationBuilder<TermsBuilder> {
         }
         if (shardSize >= 0) {
             builder.field("shard_size", shardSize);
+        }
+        if (minDocCount >= 0) {
+            builder.field("min_doc_count", minDocCount);
         }
         if (valueType != null) {
             builder.field("value_type", valueType.name().toLowerCase(Locale.ROOT));

@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,14 +19,14 @@
 
 package org.elasticsearch.indices;
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.UnmodifiableIterator;
-import org.elasticsearch.ElasticSearchException;
-import org.elasticsearch.ElasticSearchIllegalStateException;
+import com.google.common.collect.*;
+import org.elasticsearch.ElasticsearchException;
+import org.elasticsearch.ElasticsearchIllegalStateException;
 import org.elasticsearch.action.admin.indices.stats.CommonStats;
 import org.elasticsearch.action.admin.indices.stats.CommonStatsFlags;
 import org.elasticsearch.action.admin.indices.stats.CommonStatsFlags.Flag;
+import org.elasticsearch.action.admin.indices.stats.IndexShardStats;
+import org.elasticsearch.action.admin.indices.stats.ShardStats;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.component.AbstractLifecycleComponent;
 import org.elasticsearch.common.inject.*;
@@ -72,6 +72,7 @@ import org.elasticsearch.plugins.IndexPluginsModule;
 import org.elasticsearch.plugins.PluginsService;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -101,7 +102,7 @@ public class InternalIndicesService extends AbstractLifecycleComponent<IndicesSe
 
     private final PluginsService pluginsService;
 
-    private final Map<String, Injector> indicesInjectors = new HashMap<String, Injector>();
+    private final Map<String, Injector> indicesInjectors = new HashMap<>();
 
     private volatile ImmutableMap<String, IndexService> indices = ImmutableMap.of();
 
@@ -121,11 +122,11 @@ public class InternalIndicesService extends AbstractLifecycleComponent<IndicesSe
     }
 
     @Override
-    protected void doStart() throws ElasticSearchException {
+    protected void doStart() throws ElasticsearchException {
     }
 
     @Override
-    protected void doStop() throws ElasticSearchException {
+    protected void doStop() throws ElasticsearchException {
         ImmutableSet<String> indices = ImmutableSet.copyOf(this.indices.keySet());
         final CountDownLatch latch = new CountDownLatch(indices.size());
 
@@ -157,7 +158,7 @@ public class InternalIndicesService extends AbstractLifecycleComponent<IndicesSe
     }
 
     @Override
-    protected void doClose() throws ElasticSearchException {
+    protected void doClose() throws ElasticsearchException {
         injector.getInstance(RecoverySettings.class).close();
         indicesStore.close();
         indicesAnalysisService.close();
@@ -175,44 +176,50 @@ public class InternalIndicesService extends AbstractLifecycleComponent<IndicesSe
 
     @Override
     public NodeIndicesStats stats(boolean includePrevious, CommonStatsFlags flags) {
-        CommonStats stats = new CommonStats(flags);
+        CommonStats oldStats = new CommonStats(flags);
 
         if (includePrevious) {
             Flag[] setFlags = flags.getFlags();
             for (Flag flag : setFlags) {
                 switch (flag) {
                     case Get:
-                        stats.get.add(oldShardsStats.getStats);
+                        oldStats.get.add(oldShardsStats.getStats);
                         break;
                     case Indexing:
-                        stats.indexing.add(oldShardsStats.indexingStats);
+                        oldStats.indexing.add(oldShardsStats.indexingStats);
                         break;
                     case Search:
-                        stats.search.add(oldShardsStats.searchStats);
+                        oldStats.search.add(oldShardsStats.searchStats);
                         break;
                     case Merge:
-                        stats.merge.add(oldShardsStats.mergeStats);
+                        oldStats.merge.add(oldShardsStats.mergeStats);
                         break;
                     case Refresh:
-                        stats.refresh.add(oldShardsStats.refreshStats);
+                        oldStats.refresh.add(oldShardsStats.refreshStats);
                         break;
                     case Flush:
-                        stats.flush.add(oldShardsStats.flushStats);
+                        oldStats.flush.add(oldShardsStats.flushStats);
                         break;
                 }
             }
         }
 
+        Map<Index, List<IndexShardStats>> statsByShard = Maps.newHashMap();
         for (IndexService indexService : indices.values()) {
             for (IndexShard indexShard : indexService) {
                 try {
-                    stats.add(new CommonStats(indexShard, flags));
+                    IndexShardStats indexShardStats = new IndexShardStats(indexShard.shardId(), new ShardStats[] { new ShardStats(indexShard, flags) });
+                    if (!statsByShard.containsKey(indexService.index())) {
+                        statsByShard.put(indexService.index(), Lists.<IndexShardStats>newArrayList(indexShardStats));
+                    } else {
+                        statsByShard.get(indexService.index()).add(indexShardStats);
+                    }
                 } catch (IllegalIndexShardStateException e) {
                     // we can safely ignore illegal state on ones that are closing for example
                 }
             }
         }
-        return new NodeIndicesStats(stats);
+        return new NodeIndicesStats(oldStats, statsByShard);
     }
 
     /**
@@ -249,9 +256,9 @@ public class InternalIndicesService extends AbstractLifecycleComponent<IndicesSe
         return indexService;
     }
 
-    public synchronized IndexService createIndex(String sIndexName, Settings settings, String localNodeId) throws ElasticSearchException {
+    public synchronized IndexService createIndex(String sIndexName, Settings settings, String localNodeId) throws ElasticsearchException {
         if (!lifecycle.started()) {
-            throw new ElasticSearchIllegalStateException("Can't create an index [" + sIndexName + "], node is closed");
+            throw new ElasticsearchIllegalStateException("Can't create an index [" + sIndexName + "], node is closed");
         }
         Index index = new Index(sIndexName);
         if (indicesInjectors.containsKey(index.name())) {
@@ -307,11 +314,11 @@ public class InternalIndicesService extends AbstractLifecycleComponent<IndicesSe
     }
 
     @Override
-    public void removeIndex(String index, String reason) throws ElasticSearchException {
+    public void removeIndex(String index, String reason) throws ElasticsearchException {
         removeIndex(index, reason, null);
     }
 
-    private synchronized void removeIndex(String index, String reason, @Nullable Executor executor) throws ElasticSearchException {
+    private synchronized void removeIndex(String index, String reason, @Nullable Executor executor) throws ElasticsearchException {
         IndexService indexService;
         Injector indexInjector = indicesInjectors.remove(index);
         if (indexInjector == null) {

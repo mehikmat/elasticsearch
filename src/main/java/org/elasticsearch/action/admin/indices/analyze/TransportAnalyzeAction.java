@@ -1,13 +1,13 @@
 /*
- * Licensed to Elastic Search and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. Elastic Search licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,7 +16,6 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.action.admin.indices.analyze;
 
 import com.google.common.collect.Lists;
@@ -26,8 +25,8 @@ import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.lucene.analysis.tokenattributes.OffsetAttribute;
 import org.apache.lucene.analysis.tokenattributes.PositionIncrementAttribute;
 import org.apache.lucene.analysis.tokenattributes.TypeAttribute;
-import org.elasticsearch.ElasticSearchException;
-import org.elasticsearch.ElasticSearchIllegalArgumentException;
+import org.elasticsearch.ElasticsearchException;
+import org.elasticsearch.ElasticsearchIllegalArgumentException;
 import org.elasticsearch.action.support.single.custom.TransportSingleCustomOperationAction;
 import org.elasticsearch.cluster.ClusterService;
 import org.elasticsearch.cluster.ClusterState;
@@ -111,7 +110,7 @@ public class TransportAnalyzeAction extends TransportSingleCustomOperationAction
     }
 
     @Override
-    protected AnalyzeResponse shardOperation(AnalyzeRequest request, int shardId) throws ElasticSearchException {
+    protected AnalyzeResponse shardOperation(AnalyzeRequest request, int shardId) throws ElasticsearchException {
         IndexService indexService = null;
         if (request.index() != null) {
             indexService = indicesService.indexServiceSafe(request.index());
@@ -121,12 +120,12 @@ public class TransportAnalyzeAction extends TransportSingleCustomOperationAction
         String field = null;
         if (request.field() != null) {
             if (indexService == null) {
-                throw new ElasticSearchIllegalArgumentException("No index provided, and trying to analyzer based on a specific field which requires the index parameter");
+                throw new ElasticsearchIllegalArgumentException("No index provided, and trying to analyzer based on a specific field which requires the index parameter");
             }
             FieldMapper<?> fieldMapper = indexService.mapperService().smartNameFieldMapper(request.field());
             if (fieldMapper != null) {
                 if (fieldMapper.isNumeric()) {
-                    throw new ElasticSearchIllegalArgumentException("Can't process field [" + request.field() + "], Analysis requests are not supported on numeric fields");
+                    throw new ElasticsearchIllegalArgumentException("Can't process field [" + request.field() + "], Analysis requests are not supported on numeric fields");
                 }
                 analyzer = fieldMapper.indexAnalyzer();
                 field = fieldMapper.names().indexName();
@@ -147,22 +146,23 @@ public class TransportAnalyzeAction extends TransportSingleCustomOperationAction
                 analyzer = indexService.analysisService().analyzer(request.analyzer());
             }
             if (analyzer == null) {
-                throw new ElasticSearchIllegalArgumentException("failed to find analyzer [" + request.analyzer() + "]");
+                throw new ElasticsearchIllegalArgumentException("failed to find analyzer [" + request.analyzer() + "]");
             }
         } else if (request.tokenizer() != null) {
             TokenizerFactory tokenizerFactory;
             if (indexService == null) {
                 TokenizerFactoryFactory tokenizerFactoryFactory = indicesAnalysisService.tokenizerFactoryFactory(request.tokenizer());
                 if (tokenizerFactoryFactory == null) {
-                    throw new ElasticSearchIllegalArgumentException("failed to find global tokenizer under [" + request.tokenizer() + "]");
+                    throw new ElasticsearchIllegalArgumentException("failed to find global tokenizer under [" + request.tokenizer() + "]");
                 }
                 tokenizerFactory = tokenizerFactoryFactory.create(request.tokenizer(), ImmutableSettings.Builder.EMPTY_SETTINGS);
             } else {
                 tokenizerFactory = indexService.analysisService().tokenizer(request.tokenizer());
                 if (tokenizerFactory == null) {
-                    throw new ElasticSearchIllegalArgumentException("failed to find tokenizer under [" + request.tokenizer() + "]");
+                    throw new ElasticsearchIllegalArgumentException("failed to find tokenizer under [" + request.tokenizer() + "]");
                 }
             }
+
             TokenFilterFactory[] tokenFilterFactories = new TokenFilterFactory[0];
             if (request.tokenFilters() != null && request.tokenFilters().length > 0) {
                 tokenFilterFactories = new TokenFilterFactory[request.tokenFilters().length];
@@ -171,21 +171,45 @@ public class TransportAnalyzeAction extends TransportSingleCustomOperationAction
                     if (indexService == null) {
                         TokenFilterFactoryFactory tokenFilterFactoryFactory = indicesAnalysisService.tokenFilterFactoryFactory(tokenFilterName);
                         if (tokenFilterFactoryFactory == null) {
-                            throw new ElasticSearchIllegalArgumentException("failed to find global token filter under [" + request.tokenizer() + "]");
+                            throw new ElasticsearchIllegalArgumentException("failed to find global token filter under [" + tokenFilterName + "]");
                         }
                         tokenFilterFactories[i] = tokenFilterFactoryFactory.create(tokenFilterName, ImmutableSettings.Builder.EMPTY_SETTINGS);
                     } else {
                         tokenFilterFactories[i] = indexService.analysisService().tokenFilter(tokenFilterName);
                         if (tokenFilterFactories[i] == null) {
-                            throw new ElasticSearchIllegalArgumentException("failed to find token filter under [" + request.tokenizer() + "]");
+                            throw new ElasticsearchIllegalArgumentException("failed to find token filter under [" + tokenFilterName + "]");
                         }
                     }
                     if (tokenFilterFactories[i] == null) {
-                        throw new ElasticSearchIllegalArgumentException("failed to find token filter under [" + request.tokenizer() + "]");
+                        throw new ElasticsearchIllegalArgumentException("failed to find token filter under [" + tokenFilterName + "]");
                     }
                 }
             }
-            analyzer = new CustomAnalyzer(tokenizerFactory, new CharFilterFactory[0], tokenFilterFactories);
+
+            CharFilterFactory[] charFilterFactories = new CharFilterFactory[0];
+            if (request.charFilters() != null && request.charFilters().length > 0) {
+                charFilterFactories = new CharFilterFactory[request.charFilters().length];
+                for (int i = 0; i < request.charFilters().length; i++) {
+                    String charFilterName = request.charFilters()[i];
+                    if (indexService == null) {
+                        CharFilterFactoryFactory charFilterFactoryFactory = indicesAnalysisService.charFilterFactoryFactory(charFilterName);
+                        if (charFilterFactoryFactory == null) {
+                            throw new ElasticsearchIllegalArgumentException("failed to find global char filter under [" + charFilterName + "]");
+                        }
+                        charFilterFactories[i] = charFilterFactoryFactory.create(charFilterName, ImmutableSettings.Builder.EMPTY_SETTINGS);
+                    } else {
+                        charFilterFactories[i] = indexService.analysisService().charFilter(charFilterName);
+                        if (charFilterFactories[i] == null) {
+                            throw new ElasticsearchIllegalArgumentException("failed to find token char under [" + charFilterName + "]");
+                        }
+                    }
+                    if (charFilterFactories[i] == null) {
+                        throw new ElasticsearchIllegalArgumentException("failed to find token char under [" + charFilterName + "]");
+                    }
+                }
+            }
+
+            analyzer = new CustomAnalyzer(tokenizerFactory, charFilterFactories, tokenFilterFactories);
             closeAnalyzer = true;
         } else if (analyzer == null) {
             if (indexService == null) {
@@ -195,7 +219,7 @@ public class TransportAnalyzeAction extends TransportSingleCustomOperationAction
             }
         }
         if (analyzer == null) {
-            throw new ElasticSearchIllegalArgumentException("failed to find analyzer");
+            throw new ElasticsearchIllegalArgumentException("failed to find analyzer");
         }
 
         List<AnalyzeResponse.AnalyzeToken> tokens = Lists.newArrayList();
@@ -218,7 +242,7 @@ public class TransportAnalyzeAction extends TransportSingleCustomOperationAction
             }
             stream.end();
         } catch (IOException e) {
-            throw new ElasticSearchException("failed to analyze", e);
+            throw new ElasticsearchException("failed to analyze", e);
         } finally {
             if (stream != null) {
                 try {

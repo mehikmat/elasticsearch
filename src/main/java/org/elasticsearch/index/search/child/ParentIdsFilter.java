@@ -1,13 +1,13 @@
 /*
- * Licensed to Elastic Search and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. Elastic Search licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,7 +16,6 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.index.search.child;
 
 import org.apache.lucene.index.AtomicReaderContext;
@@ -29,32 +28,29 @@ import org.apache.lucene.search.Filter;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.FixedBitSet;
-import org.elasticsearch.common.bytes.HashedBytesArray;
 import org.elasticsearch.index.mapper.Uid;
 import org.elasticsearch.index.mapper.internal.UidFieldMapper;
+import org.elasticsearch.common.util.BytesRefHash;
 
 import java.io.IOException;
 
 /**
  * Advantages over using this filter over Lucene's TermsFilter in the parent child context:
  * 1) Don't need to copy all values over to a list from the id cache and then
- *    copy all the ids values over to one continuous byte array. Should save a lot of of object creations and gcs..
+ * copy all the ids values over to one continuous byte array. Should save a lot of of object creations and gcs..
  * 2) We filter docs by one field only.
  * 3) We can directly reference to values that originate from the id cache.
  */
 final class ParentIdsFilter extends Filter {
 
     private final BytesRef parentTypeBr;
-    private final Object[] keys;
-    private final boolean[] allocated;
-
     private final Filter nonNestedDocsFilter;
+    private final BytesRefHash parentIds;
 
-    public ParentIdsFilter(String parentType, Object[] keys, boolean[] allocated, Filter nonNestedDocsFilter) {
+    ParentIdsFilter(String parentType, Filter nonNestedDocsFilter, BytesRefHash parentIds) {
         this.nonNestedDocsFilter = nonNestedDocsFilter;
         this.parentTypeBr = new BytesRef(parentType);
-        this.keys = keys;
-        this.allocated = allocated;
+        this.parentIds = parentIds;
     }
 
     @Override
@@ -79,13 +75,9 @@ final class ParentIdsFilter extends Filter {
 
         DocsEnum docsEnum = null;
         FixedBitSet result = null;
-        for (int i = 0; i < allocated.length; i++) {
-            if (!allocated[i]) {
-                continue;
-            }
-
-            idSpare.bytes = ((HashedBytesArray) keys[i]).toBytes();
-            idSpare.length = idSpare.bytes.length;
+        long size = parentIds.size();
+        for (int i = 0; i < size; i++) {
+            parentIds.get(i, idSpare);
             Uid.createUidAsBytes(parentTypeBr, idSpare, uidSpare);
             if (termsEnum.seekExact(uidSpare)) {
                 int docId;

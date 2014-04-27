@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -26,6 +26,7 @@ import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.index.fielddata.AtomicFieldData.WithOrdinals;
 import org.elasticsearch.index.fielddata.ScriptDocValues.Strings;
 import org.elasticsearch.index.fielddata.ordinals.Ordinals.Docs;
+import org.elasticsearch.index.merge.Merges;
 import org.junit.Test;
 
 import java.util.Random;
@@ -60,7 +61,7 @@ public class FilterFieldDataTest extends AbstractFieldDataTests {
             }
             writer.addDocument(d);
         }
-        writer.forceMerge(1);
+        Merges.forceMerge(writer, 1);
         AtomicReaderContext context = refreshReader();
         String[] formats = new String[] { "fst", "paged_bytes"};
         
@@ -73,8 +74,7 @@ public class FilterFieldDataTest extends AbstractFieldDataTests {
                 AtomicFieldData.WithOrdinals<ScriptDocValues.Strings> loadDirect = (WithOrdinals<Strings>) fieldData.loadDirect(context);
                 BytesValues.WithOrdinals bytesValues = loadDirect.getBytesValues(randomBoolean());
                 Docs ordinals = bytesValues.ordinals();
-                assertThat(2L, equalTo(ordinals.getNumOrds()));
-                assertThat(1000, equalTo(ordinals.getNumDocs()));
+                assertThat(3L, equalTo(ordinals.getMaxOrd()));
                 assertThat(bytesValues.getValueByOrd(1).utf8ToString(), equalTo("10"));
                 assertThat(bytesValues.getValueByOrd(2).utf8ToString(), equalTo("100"));
             }
@@ -86,8 +86,7 @@ public class FilterFieldDataTest extends AbstractFieldDataTests {
                 AtomicFieldData.WithOrdinals<ScriptDocValues.Strings> loadDirect = (WithOrdinals<Strings>) fieldData.loadDirect(context);
                 BytesValues.WithOrdinals bytesValues = loadDirect.getBytesValues(randomBoolean());
                 Docs ordinals = bytesValues.ordinals();
-                assertThat(1L, equalTo(ordinals.getNumOrds()));
-                assertThat(1000, equalTo(ordinals.getNumDocs()));
+                assertThat(2L, equalTo(ordinals.getMaxOrd()));
                 assertThat(bytesValues.getValueByOrd(1).utf8ToString(), equalTo("5"));
             }
             
@@ -99,8 +98,7 @@ public class FilterFieldDataTest extends AbstractFieldDataTests {
                 AtomicFieldData.WithOrdinals<ScriptDocValues.Strings> loadDirect = (WithOrdinals<Strings>) fieldData.loadDirect(context);
                 BytesValues.WithOrdinals bytesValues = loadDirect.getBytesValues(randomBoolean());
                 Docs ordinals = bytesValues.ordinals();
-                assertThat(2L, equalTo(ordinals.getNumOrds()));
-                assertThat(1000, equalTo(ordinals.getNumDocs()));
+                assertThat(3L, equalTo(ordinals.getMaxOrd()));
                 assertThat(bytesValues.getValueByOrd(1).utf8ToString(), equalTo("10"));
                 assertThat(bytesValues.getValueByOrd(2).utf8ToString(), equalTo("100"));
             }
@@ -113,8 +111,7 @@ public class FilterFieldDataTest extends AbstractFieldDataTests {
                 AtomicFieldData.WithOrdinals<ScriptDocValues.Strings> loadDirect = (WithOrdinals<Strings>) fieldData.loadDirect(context);
                 BytesValues.WithOrdinals bytesValues = loadDirect.getBytesValues(randomBoolean());
                 Docs ordinals = bytesValues.ordinals();
-                assertThat(2L, equalTo(ordinals.getNumOrds()));
-                assertThat(1000, equalTo(ordinals.getNumDocs()));
+                assertThat(3L, equalTo(ordinals.getMaxOrd()));
                 assertThat(bytesValues.getValueByOrd(1).utf8ToString(), equalTo("10"));
                 assertThat(bytesValues.getValueByOrd(2).utf8ToString(), equalTo("100"));
             }
@@ -130,8 +127,7 @@ public class FilterFieldDataTest extends AbstractFieldDataTests {
                 AtomicFieldData.WithOrdinals<ScriptDocValues.Strings> loadDirect = (WithOrdinals<Strings>) fieldData.loadDirect(context);
                 BytesValues.WithOrdinals bytesValues = loadDirect.getBytesValues(randomBoolean());
                 Docs ordinals = bytesValues.ordinals();
-                assertThat(1L, equalTo(ordinals.getNumOrds()));
-                assertThat(1000, equalTo(ordinals.getNumDocs()));
+                assertThat(2L, equalTo(ordinals.getMaxOrd()));
                 assertThat(bytesValues.getValueByOrd(1).utf8ToString(), equalTo("100"));
             }
         }
@@ -162,8 +158,8 @@ public class FilterFieldDataTest extends AbstractFieldDataTests {
             }
             writer.addDocument(d);
         }
-        System.out.println(hundred + " " + ten + " " +five);
-        writer.forceMerge(1);
+        System.out.println(hundred + " " + ten + " " + five);
+        Merges.forceMerge(writer, 1);
         AtomicReaderContext context = refreshReader();
         String[] formats = new String[] { "fst", "paged_bytes"};
         for (String format : formats) {
@@ -175,8 +171,7 @@ public class FilterFieldDataTest extends AbstractFieldDataTests {
                 AtomicFieldData.WithOrdinals<ScriptDocValues.Strings> loadDirect = (WithOrdinals<Strings>) fieldData.loadDirect(context);
                 BytesValues.WithOrdinals bytesValues = loadDirect.getBytesValues(randomBoolean());
                 Docs ordinals = bytesValues.ordinals();
-                assertThat(1L, equalTo(ordinals.getNumOrds()));
-                assertThat(1000, equalTo(ordinals.getNumDocs()));
+                assertThat(2L, equalTo(ordinals.getMaxOrd()));
                 assertThat(bytesValues.getValueByOrd(1).utf8ToString(), equalTo("5"));
             }
             {
@@ -187,8 +182,7 @@ public class FilterFieldDataTest extends AbstractFieldDataTests {
                 AtomicFieldData.WithOrdinals<ScriptDocValues.Strings> loadDirect = (WithOrdinals<Strings>) fieldData.loadDirect(context);
                 BytesValues.WithOrdinals bytesValues = loadDirect.getBytesValues(randomBoolean());
                 Docs ordinals = bytesValues.ordinals();
-                assertThat(2L, equalTo(ordinals.getNumOrds()));
-                assertThat(1000, equalTo(ordinals.getNumDocs()));
+                assertThat(3L, equalTo(ordinals.getMaxOrd()));
                 assertThat(bytesValues.getValueByOrd(1).utf8ToString(), equalTo("10"));
                 assertThat(bytesValues.getValueByOrd(2).utf8ToString(), equalTo("5"));
             }

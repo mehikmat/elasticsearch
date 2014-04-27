@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -20,7 +20,8 @@
 package org.elasticsearch.action.percolate;
 
 import com.google.common.collect.Lists;
-import org.elasticsearch.ElasticSearchGenerationException;
+import org.elasticsearch.ElasticsearchGenerationException;
+import org.elasticsearch.client.Requests;
 import org.elasticsearch.common.bytes.BytesArray;
 import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.xcontent.*;
@@ -31,6 +32,8 @@ import org.elasticsearch.search.aggregations.AggregationBuilder;
 import org.elasticsearch.search.builder.SearchSourceBuilderException;
 import org.elasticsearch.search.facet.FacetBuilder;
 import org.elasticsearch.search.highlight.HighlightBuilder;
+import org.elasticsearch.search.sort.ScoreSortBuilder;
+import org.elasticsearch.search.sort.SortBuilder;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -47,7 +50,8 @@ public class PercolateSourceBuilder implements ToXContent {
     private FilterBuilder filterBuilder;
     private Integer size;
     private Boolean sort;
-    private Boolean score;
+    private List<SortBuilder> sorts;
+    private Boolean trackScores;
     private HighlightBuilder highlightBuilder;
     private List<FacetBuilder> facets;
     private List<AggregationBuilder> aggregations;
@@ -105,10 +109,25 @@ public class PercolateSourceBuilder implements ToXContent {
     }
 
     /**
-     * Similar as {@link #setScore(boolean)}, but also sort by the score.
+     * Similar as {@link #setTrackScores(boolean)}, but whether to sort by the score descending.
      */
     public PercolateSourceBuilder setSort(boolean sort) {
-        this.sort = sort;
+        if (sort) {
+            addSort(new ScoreSortBuilder());
+        } else {
+            this.sorts = null;
+        }
+        return this;
+    }
+
+    /**
+     * Adds a sort builder. Only sorting by score desc is supported.
+     */
+    public PercolateSourceBuilder addSort(SortBuilder sort) {
+        if (sorts == null) {
+            sorts = Lists.newArrayList();
+        }
+        sorts.add(sort);
         return this;
     }
 
@@ -116,8 +135,8 @@ public class PercolateSourceBuilder implements ToXContent {
      * Whether to compute a score for each match and include it in the response. The score is based on
      * {@link #setQueryBuilder(QueryBuilder)}.
      */
-    public PercolateSourceBuilder setScore(boolean score) {
-        this.score = score;
+    public PercolateSourceBuilder setTrackScores(boolean trackScores) {
+        this.trackScores = trackScores;
         return this;
     }
 
@@ -178,11 +197,17 @@ public class PercolateSourceBuilder implements ToXContent {
         if (size != null) {
             builder.field("size", size);
         }
-        if (sort != null) {
-            builder.field("sort", sort);
+        if (sorts != null) {
+            builder.startArray("sort");
+            for (SortBuilder sort : sorts) {
+                builder.startObject();
+                sort.toXContent(builder, params);
+                builder.endObject();
+            }
+            builder.endArray();
         }
-        if (score != null) {
-            builder.field("score", score);
+        if (trackScores != null) {
+            builder.field("track_scores", trackScores);
         }
         if (highlightBuilder != null) {
             highlightBuilder.toXContent(builder, params);
@@ -221,7 +246,7 @@ public class PercolateSourceBuilder implements ToXContent {
         }
 
         public DocBuilder setDoc(String field, Object value) {
-            Map<String, Object> values = new HashMap<String, Object>(2);
+            Map<String, Object> values = new HashMap<>(2);
             values.put(field, value);
             setDoc(values);
             return this;
@@ -238,14 +263,14 @@ public class PercolateSourceBuilder implements ToXContent {
         }
 
         public DocBuilder setDoc(Map doc) {
-            return setDoc(doc, PercolateRequest.contentType);
+            return setDoc(doc, Requests.CONTENT_TYPE);
         }
 
         public DocBuilder setDoc(Map doc, XContentType contentType) {
             try {
                 return setDoc(XContentFactory.contentBuilder(contentType).map(doc));
             } catch (IOException e) {
-                throw new ElasticSearchGenerationException("Failed to generate [" + doc + "]", e);
+                throw new ElasticsearchGenerationException("Failed to generate [" + doc + "]", e);
             }
         }
 
@@ -255,13 +280,10 @@ public class PercolateSourceBuilder implements ToXContent {
             if (contentType == builder.contentType()) {
                 builder.rawField("doc", doc);
             } else {
-                XContentParser parser = XContentFactory.xContent(contentType).createParser(doc);
-                try {
+                try (XContentParser parser = XContentFactory.xContent(contentType).createParser(doc)) {
                     parser.nextToken();
                     builder.field("doc");
                     builder.copyCurrentStructure(parser);
-                } finally {
-                    parser.close();
                 }
             }
             return builder;

@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -24,8 +24,11 @@ import org.apache.lucene.document.Field;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.search.*;
+import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.index.fielddata.fieldcomparator.SortMode;
 import org.junit.Test;
+
+import java.util.Locale;
 
 import static org.hamcrest.Matchers.equalTo;
 
@@ -35,13 +38,21 @@ public abstract class AbstractNumericFieldDataTests extends AbstractFieldDataImp
 
     protected abstract FieldDataType getFieldDataType();
 
+    protected ImmutableSettings.Builder getFieldDataSettings() {
+        ImmutableSettings.Builder builder = ImmutableSettings.builder();
+        IndexFieldData.CommonSettings.MemoryStorageFormat[] formats = IndexFieldData.CommonSettings.MemoryStorageFormat.values();
+        int i = randomInt(formats.length);
+        if (i < formats.length) {
+            builder.put(IndexFieldData.CommonSettings.SETTING_MEMORY_STORAGE_HINT, formats[i].name().toLowerCase(Locale.ROOT));
+        }
+        return builder;
+    }
+
     @Test
     public void testSingleValueAllSetNumber() throws Exception {
         fillSingleValueAllSet();
         IndexNumericFieldData indexFieldData = getForField("value");
         AtomicNumericFieldData fieldData = indexFieldData.load(refreshReader());
-
-        assertThat(fieldData.getNumDocs(), equalTo(3));
 
         LongValues longValues = fieldData.getLongValues();
 
@@ -93,8 +104,6 @@ public abstract class AbstractNumericFieldDataTests extends AbstractFieldDataImp
         IndexNumericFieldData indexFieldData = getForField("value");
         AtomicNumericFieldData fieldData = indexFieldData.load(refreshReader());
 
-        assertThat(fieldData.getNumDocs(), equalTo(3));
-
         LongValues longValues = fieldData.getLongValues();
 
         assertThat(longValues.isMultiValued(), equalTo(false));
@@ -118,7 +127,7 @@ public abstract class AbstractNumericFieldDataTests extends AbstractFieldDataImp
 
         assertThat(1, equalTo(doubleValues.setDocument(2)));
         assertThat(doubleValues.nextValue(), equalTo(3d));
-        
+
         IndexSearcher searcher = new IndexSearcher(readerContext.reader());
         TopFieldDocs topDocs;
 
@@ -171,8 +180,6 @@ public abstract class AbstractNumericFieldDataTests extends AbstractFieldDataImp
         IndexNumericFieldData indexFieldData = getForField("value");
         AtomicNumericFieldData fieldData = indexFieldData.load(refreshReader());
 
-        assertThat(fieldData.getNumDocs(), equalTo(3));
-
         LongValues longValues = fieldData.getLongValues();
 
         assertThat(longValues.isMultiValued(), equalTo(true));
@@ -208,8 +215,6 @@ public abstract class AbstractNumericFieldDataTests extends AbstractFieldDataImp
         IndexNumericFieldData indexFieldData = getForField("value");
         AtomicNumericFieldData fieldData = indexFieldData.load(refreshReader());
 
-        assertThat(fieldData.getNumDocs(), equalTo(3));
-
         LongValues longValues = fieldData.getLongValues();
 
         assertThat(longValues.isMultiValued(), equalTo(true));
@@ -236,7 +241,7 @@ public abstract class AbstractNumericFieldDataTests extends AbstractFieldDataImp
 
         assertThat(1, equalTo(doubleValues.setDocument(2)));
         assertThat(doubleValues.nextValue(), equalTo(3d));
-        
+
     }
 
     @Test
@@ -244,8 +249,6 @@ public abstract class AbstractNumericFieldDataTests extends AbstractFieldDataImp
         fillAllMissing();
         IndexNumericFieldData indexFieldData = getForField("value");
         AtomicNumericFieldData fieldData = indexFieldData.load(refreshReader());
-
-        assertThat(fieldData.getNumDocs(), equalTo(3));
 
         // long values
 
@@ -268,7 +271,7 @@ public abstract class AbstractNumericFieldDataTests extends AbstractFieldDataImp
         assertThat(0, equalTo(doubleValues.setDocument(1)));
 
         assertThat(0, equalTo(doubleValues.setDocument(2)));
-    }        
+    }
 
 
     protected void fillAllMissing() throws Exception {

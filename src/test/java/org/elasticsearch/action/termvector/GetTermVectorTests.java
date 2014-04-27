@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -24,16 +24,11 @@ import org.apache.lucene.analysis.payloads.PayloadHelper;
 import org.apache.lucene.document.FieldType;
 import org.apache.lucene.index.*;
 import org.apache.lucene.util.BytesRef;
-import org.elasticsearch.ElasticSearchException;
+import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.action.ActionFuture;
-import org.elasticsearch.action.termvector.TermVectorRequest;
-import org.elasticsearch.action.termvector.TermVectorRequestBuilder;
-import org.elasticsearch.action.termvector.TermVectorResponse;
-import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.index.mapper.core.AbstractFieldMapper;
-import org.elasticsearch.test.hamcrest.ElasticsearchAssertions;
 import org.hamcrest.Matchers;
 import org.junit.Test;
 
@@ -43,12 +38,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.elasticsearch.common.settings.ImmutableSettings.settingsBuilder;
+import static org.elasticsearch.test.hamcrest.ElasticsearchAssertions.assertAcked;
 import static org.elasticsearch.test.hamcrest.ElasticsearchAssertions.assertThrows;
 import static org.hamcrest.Matchers.equalTo;
 
 public class GetTermVectorTests extends AbstractTermVectorTests {
-
-
 
     @Test
     public void testNoSuchDoc() throws Exception {
@@ -60,7 +55,7 @@ public class GetTermVectorTests extends AbstractTermVectorTests {
                         .endObject()
                 .endObject()
                 .endObject().endObject();
-        ElasticsearchAssertions.assertAcked(prepareCreate("test").addMapping("type1", mapping));
+        assertAcked(prepareCreate("test").addMapping("type1", mapping));
 
         ensureYellow();
 
@@ -75,7 +70,7 @@ public class GetTermVectorTests extends AbstractTermVectorTests {
         }
 
     }
-    
+
     @Test
     public void testExistingFieldWithNoTermVectorsNoNPE() throws Exception {
         XContentBuilder mapping = XContentFactory.jsonBuilder().startObject().startObject("type1")
@@ -86,7 +81,7 @@ public class GetTermVectorTests extends AbstractTermVectorTests {
                         .endObject()
                 .endObject()
                 .endObject().endObject();
-        ElasticsearchAssertions.assertAcked(prepareCreate("test").addMapping("type1", mapping));
+        assertAcked(prepareCreate("test").addMapping("type1", mapping));
 
         ensureYellow();
         // when indexing a field that simply has a question mark, the term
@@ -102,7 +97,7 @@ public class GetTermVectorTests extends AbstractTermVectorTests {
         assertThat(actionGet.isExists(), Matchers.equalTo(true));
 
     }
-    
+
     @Test
     public void testExistingFieldButNotInDocNPE() throws Exception {
 
@@ -114,7 +109,7 @@ public class GetTermVectorTests extends AbstractTermVectorTests {
                         .endObject()
                 .endObject()
                 .endObject().endObject();
-        ElasticsearchAssertions.assertAcked(prepareCreate("test").addMapping("type1", mapping));
+        assertAcked(prepareCreate("test").addMapping("type1", mapping));
         ensureYellow();
         // when indexing a field that simply has a question mark, the term
         // vectors will be null
@@ -128,11 +123,11 @@ public class GetTermVectorTests extends AbstractTermVectorTests {
         assertThat(actionGet.isExists(), Matchers.equalTo(true));
 
     }
-    
+
 
 
     @Test
-    public void testSimpleTermVectors() throws ElasticSearchException, IOException {
+    public void testSimpleTermVectors() throws ElasticsearchException, IOException {
         XContentBuilder mapping = XContentFactory.jsonBuilder().startObject().startObject("type1")
                 .startObject("properties")
                         .startObject("field")
@@ -142,8 +137,9 @@ public class GetTermVectorTests extends AbstractTermVectorTests {
                         .endObject()
                 .endObject()
                 .endObject().endObject();
-        ElasticsearchAssertions.assertAcked(prepareCreate("test").addMapping("type1", mapping)
-                .setSettings(ImmutableSettings.settingsBuilder()
+        assertAcked(prepareCreate("test").addMapping("type1", mapping)
+                .setSettings(settingsBuilder()
+                        .put(indexSettings())
                         .put("index.analysis.analyzer.tv_test.tokenizer", "whitespace")
                         .putArray("index.analysis.analyzer.tv_test.filter", "type_as_payload", "lowercase")));
         ensureYellow();
@@ -200,7 +196,7 @@ public class GetTermVectorTests extends AbstractTermVectorTests {
     }
 
     @Test
-    public void testRandomSingleTermVectors() throws ElasticSearchException, IOException {
+    public void testRandomSingleTermVectors() throws ElasticsearchException, IOException {
         FieldType ft = new FieldType();
         int config = randomInt(6);
         boolean storePositions = false;
@@ -254,8 +250,8 @@ public class GetTermVectorTests extends AbstractTermVectorTests {
                         .endObject()
                 .endObject()
                 .endObject().endObject();
-        ElasticsearchAssertions.assertAcked(prepareCreate("test").addMapping("type1", mapping)
-                .setSettings(ImmutableSettings.settingsBuilder()
+        assertAcked(prepareCreate("test").addMapping("type1", mapping)
+                .setSettings(settingsBuilder()
                         .put("index.analysis.analyzer.tv_test.tokenizer", "whitespace")
                         .putArray("index.analysis.analyzer.tv_test.filter", "type_as_payload", "lowercase")));
         ensureYellow();
@@ -358,8 +354,9 @@ public class GetTermVectorTests extends AbstractTermVectorTests {
     @Test
     public void testDuelESLucene() throws Exception {
         TestFieldSetting[] testFieldSettings = getFieldSettings();
-        createIndexBasedOnFieldSettings(testFieldSettings, -1);
-        TestDoc[] testDocs = generateTestDocs(5, testFieldSettings);
+        createIndexBasedOnFieldSettings("test", testFieldSettings);
+        //we generate as many docs as many shards we have
+        TestDoc[] testDocs = generateTestDocs(getNumShards("test").numPrimaries, testFieldSettings);
 
         DirectoryReader directoryReader = indexDocsWithLucene(testDocs);
         TestConfig[] testConfigs = generateTestConfigs(20, testDocs, testFieldSettings);
@@ -382,8 +379,8 @@ public class GetTermVectorTests extends AbstractTermVectorTests {
     }
 
     @Test
-    public void testRandomPayloadWithDelimitedPayloadTokenFilter() throws ElasticSearchException, IOException {
-        
+    public void testRandomPayloadWithDelimitedPayloadTokenFilter() throws ElasticsearchException, IOException {
+
         //create the test document
         int encoding = randomIntBetween(0, 2);
         String encodingString = "";
@@ -404,8 +401,10 @@ public class GetTermVectorTests extends AbstractTermVectorTests {
         XContentBuilder mapping = XContentFactory.jsonBuilder().startObject().startObject("type1").startObject("properties")
                 .startObject("field").field("type", "string").field("term_vector", "with_positions_offsets_payloads")
                 .field("analyzer", "payload_test").endObject().endObject().endObject().endObject();
-        ElasticsearchAssertions.assertAcked(prepareCreate("test").addMapping("type1", mapping).setSettings(
-                ImmutableSettings.settingsBuilder().put("index.analysis.analyzer.payload_test.tokenizer", "whitespace")
+        assertAcked(prepareCreate("test").addMapping("type1", mapping).setSettings(
+                settingsBuilder()
+                        .put(indexSettings())
+                        .put("index.analysis.analyzer.payload_test.tokenizer", "whitespace")
                         .putArray("index.analysis.analyzer.payload_test.filter", "my_delimited_payload_filter")
                         .put("index.analysis.filter.my_delimited_payload_filter.delimiter", delimiter)
                         .put("index.analysis.filter.my_delimited_payload_filter.encoding", encodingString)
@@ -429,7 +428,7 @@ public class GetTermVectorTests extends AbstractTermVectorTests {
             assertThat(docsAndPositions.nextDoc(), equalTo(0));
             List<BytesRef> curPayloads = payloads.get(term);
             assertThat(term, curPayloads, Matchers.notNullValue());
-            assert docsAndPositions != null;
+            assertNotNull(docsAndPositions);
             for (int k = 0; k < docsAndPositions.freq(); k++) {
                 docsAndPositions.nextPosition();
                 if (docsAndPositions.getPayload()!=null){
@@ -462,7 +461,7 @@ public class GetTermVectorTests extends AbstractTermVectorTests {
     }
     private String createString(String[] tokens, Map<String, List<BytesRef>> payloads, int encoding, char delimiter) {
         String resultString = "";
-        ObjectIntOpenHashMap<String> payloadCounter = new ObjectIntOpenHashMap<String>();
+        ObjectIntOpenHashMap<String> payloadCounter = new ObjectIntOpenHashMap<>();
         for (String token : tokens) {
             if (!payloadCounter.containsKey(token)) {
                 payloadCounter.putIfAbsent(token, 0);
@@ -487,7 +486,7 @@ public class GetTermVectorTests extends AbstractTermVectorTests {
                     break;
                 }
                 default: {
-                    throw new ElasticSearchException("unsupported encoding type");
+                    throw new ElasticsearchException("unsupported encoding type");
                 }
                 }
             }
@@ -497,7 +496,7 @@ public class GetTermVectorTests extends AbstractTermVectorTests {
     }
 
     private Map<String, List<BytesRef>> createPayloads(String[] tokens, int encoding) {
-        Map<String, List<BytesRef>> payloads = new HashMap<String, List<BytesRef>>();
+        Map<String, List<BytesRef>> payloads = new HashMap<>();
         for (String token : tokens) {
             if (payloads.get(token) == null) {
                 payloads.put(token, new ArrayList<BytesRef>());
@@ -525,7 +524,7 @@ public class GetTermVectorTests extends AbstractTermVectorTests {
                     break;
                 }
                 default: {
-                    throw new ElasticSearchException("unsupported encoding type");
+                    throw new ElasticsearchException("unsupported encoding type");
                 }
                 }
             } else {

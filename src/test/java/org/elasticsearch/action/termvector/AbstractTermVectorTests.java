@@ -1,13 +1,11 @@
-package org.elasticsearch.action.termvector;
-
 /*
- * Licensed to ElasticSearch under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -18,6 +16,8 @@ package org.elasticsearch.action.termvector;
  * specific language governing permissions and limitations
  * under the License.
  */
+
+package org.elasticsearch.action.termvector;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenFilter;
@@ -37,8 +37,6 @@ import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.RAMDirectory;
 import org.elasticsearch.Version;
-import org.elasticsearch.action.termvector.TermVectorRequestBuilder;
-import org.elasticsearch.action.termvector.TermVectorResponse;
 import org.elasticsearch.common.inject.internal.Join;
 import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.xcontent.XContentBuilder;
@@ -50,6 +48,7 @@ import java.io.Reader;
 import java.util.*;
 
 import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
+import static org.elasticsearch.test.hamcrest.ElasticsearchAssertions.assertAcked;
 import static org.hamcrest.Matchers.equalTo;
 
 public abstract class AbstractTermVectorTests extends ElasticsearchIntegrationTest {
@@ -119,7 +118,7 @@ public abstract class AbstractTermVectorTests extends ElasticsearchIntegrationTe
 
         public TestDoc(String id, TestFieldSetting[] fieldSettings, String[] fieldContent) {
             this.id = id;
-            assert fieldSettings.length == fieldContent.length;
+            assertEquals(fieldSettings.length, fieldContent.length);
             this.fieldSettings = fieldSettings;
             this.fieldContent = fieldContent;
         }
@@ -182,21 +181,18 @@ public abstract class AbstractTermVectorTests extends ElasticsearchIntegrationTe
         }
     }
 
-    protected void createIndexBasedOnFieldSettings(TestFieldSetting[] fieldSettings, int number_of_shards) throws IOException {
-        wipeIndices("test");
+    protected void createIndexBasedOnFieldSettings(String index, TestFieldSetting[] fieldSettings) throws IOException {
         XContentBuilder mappingBuilder = jsonBuilder();
         mappingBuilder.startObject().startObject("type1").startObject("properties");
         for (TestFieldSetting field : fieldSettings) {
             field.addToMappings(mappingBuilder);
         }
+        mappingBuilder.endObject().endObject().endObject();
         ImmutableSettings.Builder settings = ImmutableSettings.settingsBuilder()
+                .put(indexSettings())
                 .put("index.analysis.analyzer.tv_test.tokenizer", "standard")
                 .putArray("index.analysis.analyzer.tv_test.filter", "type_as_payload", "lowercase");
-        if (number_of_shards > 0) {
-            settings.put("number_of_shards", number_of_shards);
-        }
-        mappingBuilder.endObject().endObject().endObject();
-        prepareCreate("test").addMapping("type1", mappingBuilder).setSettings(settings).get();
+        assertAcked(prepareCreate(index).addMapping("type1", mappingBuilder).setSettings(settings));
 
         ensureYellow();
     }
@@ -205,14 +201,14 @@ public abstract class AbstractTermVectorTests extends ElasticsearchIntegrationTe
      * Generate test documentsThe returned documents are already indexed.
      */
     protected TestDoc[] generateTestDocs(int numberOfDocs, TestFieldSetting[] fieldSettings) {
-        String[] fieldContentOptions = new String[] { "Generating a random permutation of a sequence (such as when shuffling cards).",
+        String[] fieldContentOptions = new String[]{"Generating a random permutation of a sequence (such as when shuffling cards).",
                 "Selecting a random sample of a population (important in statistical sampling).",
                 "Allocating experimental units via random assignment to a treatment or control condition.",
                 "Generating random numbers: see Random number generation.",
-                "Transforming a data stream (such as when using a scrambler in telecommunications)." };
+                "Transforming a data stream (such as when using a scrambler in telecommunications)."};
 
         String[] contentArray = new String[fieldSettings.length];
-        Map<String, Object> docSource = new HashMap<String, Object>();
+        Map<String, Object> docSource = new HashMap<>();
         TestDoc[] testDocs = new TestDoc[numberOfDocs];
         for (int docId = 0; docId < numberOfDocs; docId++) {
             docSource.clear();
@@ -231,13 +227,13 @@ public abstract class AbstractTermVectorTests extends ElasticsearchIntegrationTe
     }
 
     protected TestConfig[] generateTestConfigs(int numberOfTests, TestDoc[] testDocs, TestFieldSetting[] fieldSettings) {
-        ArrayList<TestConfig> configs = new ArrayList<TestConfig>();
+        ArrayList<TestConfig> configs = new ArrayList<>();
         for (int i = 0; i < numberOfTests; i++) {
 
             ArrayList<String> selectedFields = null;
             if (randomBoolean()) {
                 // used field selection
-                selectedFields = new ArrayList<String>();
+                selectedFields = new ArrayList<>();
                 if (randomBoolean()) {
                     selectedFields.add("Doesnt_exist"); // this will be ignored.
                 }
@@ -252,21 +248,21 @@ public abstract class AbstractTermVectorTests extends ElasticsearchIntegrationTe
 
             }
             TestConfig config = new TestConfig(testDocs[randomInt(testDocs.length - 1)], selectedFields == null ? null
-                    : selectedFields.toArray(new String[] {}), randomBoolean(), randomBoolean(), randomBoolean());
+                    : selectedFields.toArray(new String[]{}), randomBoolean(), randomBoolean(), randomBoolean());
 
             configs.add(config);
         }
         // always adds a test that fails
-        configs.add(new TestConfig(new TestDoc("doesnt_exist", new TestFieldSetting[] {}, new String[] {}).index("doesn't_exist"),
-                new String[] { "doesnt_exist" }, true, true, true).expectedException(IndexMissingException.class));
+        configs.add(new TestConfig(new TestDoc("doesnt_exist", new TestFieldSetting[]{}, new String[]{}).index("doesn't_exist"),
+                new String[]{"doesnt_exist"}, true, true, true).expectedException(IndexMissingException.class));
 
         refresh();
 
-        return configs.toArray(new TestConfig[] {});
+        return configs.toArray(new TestConfig[]{});
     }
 
     protected TestFieldSetting[] getFieldSettings() {
-        return new TestFieldSetting[] { new TestFieldSetting("field_with_positions", false, false, true),
+        return new TestFieldSetting[]{new TestFieldSetting("field_with_positions", false, false, true),
                 new TestFieldSetting("field_with_offsets", true, false, false),
                 new TestFieldSetting("field_with_only_tv", false, false, false),
                 new TestFieldSetting("field_with_positions_offsets", false, false, true),
@@ -277,7 +273,7 @@ public abstract class AbstractTermVectorTests extends ElasticsearchIntegrationTe
 
     protected DirectoryReader indexDocsWithLucene(TestDoc[] testDocs) throws IOException {
 
-        Map<String, Analyzer> mapping = new HashMap<String, Analyzer>();
+        Map<String, Analyzer> mapping = new HashMap<>();
         for (TestFieldSetting field : testDocs[0].fieldSettings) {
             if (field.storedPayloads) {
                 mapping.put(field.name, new Analyzer() {
@@ -324,7 +320,7 @@ public abstract class AbstractTermVectorTests extends ElasticsearchIntegrationTe
 
     protected void validateResponse(TermVectorResponse esResponse, Fields luceneFields, TestConfig testConfig) throws IOException {
         TestDoc testDoc = testConfig.doc;
-        HashSet<String> selectedFields = testConfig.selectedFields == null ? null : new HashSet<String>(
+        HashSet<String> selectedFields = testConfig.selectedFields == null ? null : new HashSet<>(
                 Arrays.asList(testConfig.selectedFields));
         Fields esTermVectorFields = esResponse.getFields();
         for (TestFieldSetting field : testDoc.fieldSettings) {
@@ -406,7 +402,7 @@ public abstract class AbstractTermVectorTests extends ElasticsearchIntegrationTe
         TopDocs search = searcher.search(new TermQuery(new Term("id", doc.id)), 1);
 
         ScoreDoc[] scoreDocs = search.scoreDocs;
-        assert (scoreDocs.length == 1);
+        assertEquals(1, scoreDocs.length);
         return directoryReader.getTermVectors(scoreDocs[0].doc);
     }
 

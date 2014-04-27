@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -28,12 +28,13 @@ import org.apache.lucene.search.NumericRangeQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.NumericUtils;
-import org.elasticsearch.ElasticSearchIllegalArgumentException;
+import org.elasticsearch.ElasticsearchIllegalArgumentException;
 import org.elasticsearch.common.Explicit;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.Numbers;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.common.unit.Fuzziness;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentParser;
 import org.elasticsearch.index.analysis.NamedAnalyzer;
@@ -77,19 +78,19 @@ public class IpFieldMapper extends NumberFieldMapper<Long> {
 
     private static final Pattern pattern = Pattern.compile("\\.");
 
-    public static long ipToLong(String ip) throws ElasticSearchIllegalArgumentException {
+    public static long ipToLong(String ip) throws ElasticsearchIllegalArgumentException {
         try {
             String[] octets = pattern.split(ip);
             if (octets.length != 4) {
-                throw new ElasticSearchIllegalArgumentException("failed to parse ip [" + ip + "], not full ip address (4 dots)");
+                throw new ElasticsearchIllegalArgumentException("failed to parse ip [" + ip + "], not full ip address (4 dots)");
             }
             return (Long.parseLong(octets[0]) << 24) + (Integer.parseInt(octets[1]) << 16) +
                     (Integer.parseInt(octets[2]) << 8) + Integer.parseInt(octets[3]);
         } catch (Exception e) {
-            if (e instanceof ElasticSearchIllegalArgumentException) {
-                throw (ElasticSearchIllegalArgumentException) e;
+            if (e instanceof ElasticsearchIllegalArgumentException) {
+                throw (ElasticsearchIllegalArgumentException) e;
             }
-            throw new ElasticSearchIllegalArgumentException("failed to parse ip [" + ip + "]", e);
+            throw new ElasticsearchIllegalArgumentException("failed to parse ip [" + ip + "]", e);
         }
     }
 
@@ -108,7 +109,7 @@ public class IpFieldMapper extends NumberFieldMapper<Long> {
         protected String nullValue = Defaults.NULL_VALUE;
 
         public Builder(String name) {
-            super(name, new FieldType(Defaults.FIELD_TYPE));
+            super(name, new FieldType(Defaults.FIELD_TYPE), Defaults.PRECISION_STEP_64_BIT);
             builder = this;
         }
 
@@ -121,8 +122,9 @@ public class IpFieldMapper extends NumberFieldMapper<Long> {
         public IpFieldMapper build(BuilderContext context) {
             fieldType.setOmitNorms(fieldType.omitNorms() && boost == 1.0f);
             IpFieldMapper fieldMapper = new IpFieldMapper(buildNames(context),
-                    precisionStep, boost, fieldType, nullValue, ignoreMalformed(context), postingsProvider, docValuesProvider, similarity,
-                    fieldDataSettings, context.indexSettings());
+                    fieldType.numericPrecisionStep(), boost, fieldType, docValues, nullValue, ignoreMalformed(context), coerce(context),
+                    postingsProvider, docValuesProvider, similarity,
+                    normsLoading, fieldDataSettings, context.indexSettings(), multiFieldsBuilder.build(this, context), copyTo);
             fieldMapper.includeInAll(includeInAll);
             return fieldMapper;
         }
@@ -146,14 +148,15 @@ public class IpFieldMapper extends NumberFieldMapper<Long> {
 
     private String nullValue;
 
-    protected IpFieldMapper(Names names, int precisionStep, float boost, FieldType fieldType,
-                            String nullValue, Explicit<Boolean> ignoreMalformed,
+    protected IpFieldMapper(Names names, int precisionStep, float boost, FieldType fieldType, Boolean docValues,
+                            String nullValue, Explicit<Boolean> ignoreMalformed, Explicit<Boolean> coerce,
                             PostingsFormatProvider postingsProvider, DocValuesFormatProvider docValuesProvider,
-                            SimilarityProvider similarity, @Nullable Settings fieldDataSettings, Settings indexSettings) {
-        super(names, precisionStep, boost, fieldType,
-                ignoreMalformed, new NamedAnalyzer("_ip/" + precisionStep, new NumericIpAnalyzer(precisionStep)),
+                            SimilarityProvider similarity, Loading normsLoading, @Nullable Settings fieldDataSettings, 
+                            Settings indexSettings, MultiFields multiFields, CopyTo copyTo) {
+        super(names, precisionStep, boost, fieldType, docValues,
+                ignoreMalformed, coerce, new NamedAnalyzer("_ip/" + precisionStep, new NumericIpAnalyzer(precisionStep)),
                 new NamedAnalyzer("_ip/max", new NumericIpAnalyzer(Integer.MAX_VALUE)), postingsProvider, docValuesProvider,
-                similarity, fieldDataSettings, indexSettings);
+                similarity, normsLoading, fieldDataSettings, indexSettings, multiFields, copyTo);
         this.nullValue = nullValue;
     }
 
@@ -216,17 +219,13 @@ public class IpFieldMapper extends NumberFieldMapper<Long> {
     }
 
     @Override
-    public Query fuzzyQuery(String value, String minSim, int prefixLength, int maxExpansions, boolean transpositions) {
+    public Query fuzzyQuery(String value, Fuzziness fuzziness, int prefixLength, int maxExpansions, boolean transpositions) {
         long iValue = ipToLong(value);
         long iSim;
         try {
-            iSim = ipToLong(minSim);
-        } catch (ElasticSearchIllegalArgumentException e) {
-            try {
-                iSim = Long.parseLong(minSim);
-            } catch (NumberFormatException e1) {
-                iSim = (long) Double.parseDouble(minSim);
-            }
+            iSim = ipToLong(fuzziness.asString());
+        } catch (ElasticsearchIllegalArgumentException e) {
+            iSim = fuzziness.asLong();
         }
         return NumericRangeQuery.newLongRange(names.indexName(), precisionStep,
                 iValue - iSim,
@@ -324,7 +323,7 @@ public class IpFieldMapper extends NumberFieldMapper<Long> {
     protected void doXContentBody(XContentBuilder builder, boolean includeDefaults, Params params) throws IOException {
         super.doXContentBody(builder, includeDefaults, params);
 
-        if (includeDefaults || precisionStep != Defaults.PRECISION_STEP) {
+        if (includeDefaults || precisionStep != Defaults.PRECISION_STEP_64_BIT) {
             builder.field("precision_step", precisionStep);
         }
         if (includeDefaults || nullValue != null) {
@@ -341,10 +340,6 @@ public class IpFieldMapper extends NumberFieldMapper<Long> {
     public static class NumericIpAnalyzer extends NumericAnalyzer<NumericIpTokenizer> {
 
         private final int precisionStep;
-
-        public NumericIpAnalyzer() {
-            this(NumericUtils.PRECISION_STEP_DEFAULT);
-        }
 
         public NumericIpAnalyzer(int precisionStep) {
             this.precisionStep = precisionStep;

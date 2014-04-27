@@ -1,13 +1,13 @@
 /*
- * Licensed to Elastic Search and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. Elastic Search licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,7 +16,6 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.action.percolate;
 
 import org.elasticsearch.action.ShardOperationFailedException;
@@ -43,7 +42,7 @@ import java.util.*;
  */
 public class PercolateResponse extends BroadcastOperationResponse implements Iterable<PercolateResponse.Match>, ToXContent {
 
-    private static final Match[] EMPTY = new Match[0];
+    public static final Match[] EMPTY = new Match[0];
 
     private long tookInMillis;
     private Match[] matches;
@@ -61,10 +60,10 @@ public class PercolateResponse extends BroadcastOperationResponse implements Ite
         this.aggregations = aggregations;
     }
 
-    public PercolateResponse(int totalShards, int successfulShards, int failedShards, List<ShardOperationFailedException> shardFailures, long tookInMillis) {
+    public PercolateResponse(int totalShards, int successfulShards, int failedShards, List<ShardOperationFailedException> shardFailures, long tookInMillis, Match[] matches) {
         super(totalShards, successfulShards, failedShards, shardFailures);
         this.tookInMillis = tookInMillis;
-        this.matches = EMPTY;
+        this.matches = matches;
     }
 
     PercolateResponse() {
@@ -88,18 +87,30 @@ public class PercolateResponse extends BroadcastOperationResponse implements Ite
         return tookInMillis;
     }
 
+    /**
+     * @return The queries that match with the document being percolated. This can return <code>null</code> if th.
+     */
     public Match[] getMatches() {
         return this.matches;
     }
 
+    /**
+     * @return The total number of queries that have matched with the document being percolated.
+     */
     public long getCount() {
         return count;
     }
 
+    /**
+     * @return Any facet that has been executed on the query metadata. This can return <code>null</code>.
+     */
     public InternalFacets getFacets() {
         return facets;
     }
 
+    /**
+     * @return Any aggregations that has been executed on the query metadata. This can return <code>null</code>.
+     */
     public InternalAggregations getAggregations() {
         return aggregations;
     }
@@ -111,13 +122,11 @@ public class PercolateResponse extends BroadcastOperationResponse implements Ite
 
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
-        builder.startObject();
-
         builder.field(Fields.TOOK, tookInMillis);
         RestActions.buildBroadcastShardsHeader(builder, this);
 
         builder.field(Fields.TOTAL, count);
-        if (matches.length != 0) {
+        if (matches != null) {
             builder.startArray(Fields.MATCHES);
             boolean justIds = "ids".equals(params.param("percolate_format"));
             if (justIds) {
@@ -161,8 +170,6 @@ public class PercolateResponse extends BroadcastOperationResponse implements Ite
         if (aggregations != null) {
             aggregations.toXContent(builder, params);
         }
-
-        builder.endObject();
         return builder;
     }
 
@@ -172,10 +179,12 @@ public class PercolateResponse extends BroadcastOperationResponse implements Ite
         tookInMillis = in.readVLong();
         count = in.readVLong();
         int size = in.readVInt();
-        matches = new Match[size];
-        for (int i = 0; i < size; i++) {
-            matches[i] = new Match();
-            matches[i].readFrom(in);
+        if (size != -1) {
+            matches = new Match[size];
+            for (int i = 0; i < size; i++) {
+                matches[i] = new Match();
+                matches[i].readFrom(in);
+            }
         }
         facets = InternalFacets.readOptionalFacets(in);
         aggregations = InternalAggregations.readOptionalAggregations(in);
@@ -186,9 +195,13 @@ public class PercolateResponse extends BroadcastOperationResponse implements Ite
         super.writeTo(out);
         out.writeVLong(tookInMillis);
         out.writeVLong(count);
-        out.writeVInt(matches.length);
-        for (Match match : matches) {
-            match.writeTo(out);
+        if (matches == null) {
+            out.writeVInt(-1);
+        } else {
+            out.writeVInt(matches.length);
+            for (Match match : matches) {
+                match.writeTo(out);
+            }
         }
         out.writeOptionalStreamable(facets);
         out.writeOptionalStreamable(aggregations);
@@ -240,7 +253,7 @@ public class PercolateResponse extends BroadcastOperationResponse implements Ite
             score = in.readFloat();
             int size = in.readVInt();
             if (size > 0) {
-                hl = new HashMap<String, HighlightField>(size);
+                hl = new HashMap<>(size);
                 for (int j = 0; j < size; j++) {
                     hl.put(in.readString(), HighlightField.readHighlightField(in));
                 }

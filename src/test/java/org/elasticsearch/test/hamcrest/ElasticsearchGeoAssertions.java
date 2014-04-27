@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,20 +19,25 @@
 
 package org.elasticsearch.test.hamcrest;
 
+import com.carrotsearch.randomizedtesting.RandomizedTest;
+import com.spatial4j.core.shape.Shape;
+import com.spatial4j.core.shape.ShapeCollection;
+import com.spatial4j.core.shape.jts.JtsGeometry;
+import com.spatial4j.core.shape.jts.JtsPoint;
+import com.vividsolutions.jts.geom.*;
+import org.elasticsearch.common.geo.GeoDistance;
+import org.elasticsearch.common.geo.GeoPoint;
+import org.elasticsearch.common.unit.DistanceUnit;
+import org.hamcrest.Matcher;
+import org.junit.Assert;
+
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-import com.spatial4j.core.shape.Shape;
-import com.spatial4j.core.shape.jts.JtsGeometry;
-import com.spatial4j.core.shape.jts.JtsPoint;
-import com.vividsolutions.jts.geom.Coordinate;
-import com.vividsolutions.jts.geom.Geometry;
-import com.vividsolutions.jts.geom.LineString;
-import com.vividsolutions.jts.geom.MultiLineString;
-import com.vividsolutions.jts.geom.MultiPoint;
-import com.vividsolutions.jts.geom.MultiPolygon;
-import com.vividsolutions.jts.geom.Polygon;
+import static org.hamcrest.Matchers.instanceOf;
+import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertTrue;
 
 public class ElasticsearchGeoAssertions {
 
@@ -100,7 +105,7 @@ public class ElasticsearchGeoAssertions {
     }
 
     public static void assertEquals(Coordinate c1, Coordinate c2) {
-        assert (c1.x == c2.x && c1.y == c2.y): "expected coordinate " + c1 + " but found " + c2;
+        assertTrue("expected coordinate " + c1 + " but found " + c2, c1.x == c2.x && c1.y == c2.y);
     }
 
     private static boolean isRing(Coordinate[] c) {
@@ -108,7 +113,7 @@ public class ElasticsearchGeoAssertions {
     }
     
     public static void assertEquals(Coordinate[] c1, Coordinate[] c2) {
-        assert (c1.length == c1.length) : "expected " + c1.length + " coordinates but found " + c2.length;
+        Assert.assertEquals(c1.length, c2.length);
 
         if(isRing(c1) && isRing(c2)) {
             c1 = fixedOrderedRing(c1, true);
@@ -125,7 +130,7 @@ public class ElasticsearchGeoAssertions {
     }
 
     public static void assertEquals(Polygon p1, Polygon p2) {
-        assert (p1.getNumInteriorRing() == p2.getNumInteriorRing()) : "expect " + p1.getNumInteriorRing() + " interior ring but found " + p2.getNumInteriorRing();
+        Assert.assertEquals(p1.getNumInteriorRing(), p2.getNumInteriorRing());
 
         assertEquals(p1.getExteriorRing(), p2.getExteriorRing());
 
@@ -137,7 +142,7 @@ public class ElasticsearchGeoAssertions {
     }
 
     public static void assertEquals(MultiPolygon p1, MultiPolygon p2) {
-        assert p1.getNumGeometries() == p2.getNumGeometries(): "expected " + p1.getNumGeometries() + " geometries but found " + p2.getNumGeometries();
+        Assert.assertEquals(p1.getNumGeometries(), p2.getNumGeometries());
 
         // TODO: This test do not check all permutations. So the Test fails
         // if the inner polygons are not ordered the same way in both Multipolygons
@@ -156,7 +161,7 @@ public class ElasticsearchGeoAssertions {
             assertEquals((Polygon) s1, (Polygon) s2);
 
         } else if (s1 instanceof MultiPoint && s2 instanceof MultiPoint) {
-            assert s1.equals(s2): "Expected " + s1 + " but found " + s2;
+            Assert.assertEquals(s1, s2);
 
         } else if (s1 instanceof MultiPolygon && s2 instanceof MultiPolygon) {
             assertEquals((MultiPolygon) s1, (MultiPolygon) s2);
@@ -170,20 +175,32 @@ public class ElasticsearchGeoAssertions {
         assertEquals(g1.getGeom(), g2.getGeom());
     }
 
+    public static void assertEquals(ShapeCollection s1, ShapeCollection s2) {
+        Assert.assertEquals(s1.size(), s2.size());
+        for (int i = 0; i < s1.size(); i++) {
+            assertEquals(s1.get(i), s2.get(i));
+        }
+    }
+
     public static void assertEquals(Shape s1, Shape s2) {
         if(s1 instanceof JtsGeometry && s2 instanceof JtsGeometry) {
             assertEquals((JtsGeometry) s1, (JtsGeometry) s2);
         } else if(s1 instanceof JtsPoint && s2 instanceof JtsPoint) {
             JtsPoint p1 = (JtsPoint) s1;
             JtsPoint p2 = (JtsPoint) s2;
-            assert p1.equals(p1): "expected " + p1 + " but found " + p2;
+            Assert.assertEquals(p1, p2);
+        } else if (s1 instanceof ShapeCollection && s2 instanceof ShapeCollection) {
+            assertEquals((ShapeCollection)s1, (ShapeCollection)s2);
         } else {
-            throw new RuntimeException("equality of shape types not supported [" + s1.getClass().getName() + " and " + s2.getClass().getName() + "]");
+            //We want to know the type of the shape because we test shape equality in a special way...
+            //... in particular we test that one ring is equivalent to another ring even if the points are rotated or reversed.
+            throw new RuntimeException(
+                    "equality of shape types not supported [" + s1.getClass().getName() + " and " + s2.getClass().getName() + "]");
         }
     }
 
     private static Geometry unwrap(Shape shape) {
-        assert (shape instanceof JtsGeometry): "shape is not a JTSGeometry";
+        assertThat(shape, instanceOf(JtsGeometry.class));
         return ((JtsGeometry)shape).getGeom();
     }
 
@@ -202,4 +219,19 @@ public class ElasticsearchGeoAssertions {
     public static void assertMultiLineString(Shape shape) {
         assert(unwrap(shape) instanceof MultiLineString): "expected MultiLineString but found " + unwrap(shape).getClass().getName();
     }
+    
+    public static void assertDistance(String geohash1, String geohash2, Matcher<Double> match) {
+        GeoPoint p1 = new GeoPoint(geohash1);
+        GeoPoint p2 = new GeoPoint(geohash2);
+        assertDistance(p1.lat(), p1.lon(), p2.lat(),p2.lon(), match);
+    }
+
+    public static void assertDistance(double lat1, double lon1, double lat2, double lon2, Matcher<Double> match) {
+        assertThat(distance(lat1, lon1, lat2, lon2), match);
+    }
+    
+    private static double distance(double lat1, double lon1, double lat2, double lon2) {
+        return GeoDistance.ARC.calculate(lat1, lon1, lat2, lon2, DistanceUnit.DEFAULT);
+    }
+
 }

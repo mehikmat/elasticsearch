@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -22,7 +22,7 @@ package org.elasticsearch.search.internal;
 import com.google.common.collect.ImmutableMap;
 import org.apache.lucene.search.Explanation;
 import org.apache.lucene.util.BytesRef;
-import org.elasticsearch.ElasticSearchParseException;
+import org.elasticsearch.ElasticsearchParseException;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.bytes.BytesArray;
@@ -36,7 +36,6 @@ import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentBuilderString;
 import org.elasticsearch.common.xcontent.XContentHelper;
 import org.elasticsearch.index.fielddata.fieldcomparator.BytesRefFieldComparatorSource;
-import org.elasticsearch.rest.action.support.RestXContentBuilder;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHitField;
 import org.elasticsearch.search.SearchShardTarget;
@@ -174,7 +173,7 @@ public class InternalSearchHit implements SearchHit {
             this.source = CompressorFactory.uncompressIfNeeded(this.source);
             return this.source;
         } catch (IOException e) {
-            throw new ElasticSearchParseException("failed to decompress source", e);
+            throw new ElasticsearchParseException("failed to decompress source", e);
         }
     }
 
@@ -231,7 +230,7 @@ public class InternalSearchHit implements SearchHit {
         try {
             return XContentHelper.convertToJson(sourceRef(), false);
         } catch (IOException e) {
-            throw new ElasticSearchParseException("failed to convert source to a json string");
+            throw new ElasticsearchParseException("failed to convert source to a json string");
         }
     }
 
@@ -242,7 +241,7 @@ public class InternalSearchHit implements SearchHit {
 
     @SuppressWarnings({"unchecked"})
     @Override
-    public Map<String, Object> sourceAsMap() throws ElasticSearchParseException {
+    public Map<String, Object> sourceAsMap() throws ElasticsearchParseException {
         if (source == null) {
             return null;
         }
@@ -310,14 +309,18 @@ public class InternalSearchHit implements SearchHit {
     public void sortValues(Object[] sortValues) {
         // LUCENE 4 UPGRADE: There must be a better way
         // we want to convert to a Text object here, and not BytesRef
+
+        // Don't write into sortValues! Otherwise the fields in FieldDoc is modified, which may be used in other places. (SearchContext#lastEmitedDoc)
+        Object[] sortValuesCopy = new Object[sortValues.length];
+        System.arraycopy(sortValues, 0, sortValuesCopy, 0, sortValues.length);
         if (sortValues != null) {
             for (int i = 0; i < sortValues.length; i++) {
                 if (sortValues[i] instanceof BytesRef) {
-                    sortValues[i] = new StringAndBytesText(new BytesArray((BytesRef) sortValues[i]));
+                    sortValuesCopy[i] = new StringAndBytesText(new BytesArray((BytesRef) sortValues[i]));
                 }
             }
         }
-        this.sortValues = sortValues;
+        this.sortValues = sortValuesCopy;
     }
 
     @Override
@@ -407,7 +410,7 @@ public class InternalSearchHit implements SearchHit {
             builder.field(Fields._SCORE, score);
         }
         if (source != null) {
-            RestXContentBuilder.restDocumentSource(source, builder, params);
+            XContentHelper.writeRawField("_source", source, builder, params);
         }
         if (fields != null && !fields.isEmpty()) {
             builder.startObject(Fields.FIELDS);
@@ -415,12 +418,12 @@ public class InternalSearchHit implements SearchHit {
                 if (field.values().isEmpty()) {
                     continue;
                 }
-                if (field.values().size() == 1) {
-                    builder.field(field.name(), field.values().get(0));
+                String fieldName = field.getName();
+                if (field.isMetadataField()) {
+                    builder.field(fieldName, field.value());
                 } else {
-                    builder.field(field.name());
-                    builder.startArray();
-                    for (Object value : field.values()) {
+                    builder.startArray(fieldName);
+                    for (Object value : field.getValues()) {
                         builder.value(value);
                     }
                     builder.endArray();

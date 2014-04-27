@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -24,15 +24,17 @@ import org.elasticsearch.action.termvector.MultiTermVectorsRequest;
 import org.elasticsearch.action.termvector.MultiTermVectorsResponse;
 import org.elasticsearch.action.termvector.TermVectorRequest;
 import org.elasticsearch.client.Client;
+import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.rest.*;
+import org.elasticsearch.rest.action.support.RestActions;
+import org.elasticsearch.rest.action.support.RestToXContentListener;
 
 import static org.elasticsearch.rest.RestRequest.Method.GET;
 import static org.elasticsearch.rest.RestRequest.Method.POST;
 import static org.elasticsearch.rest.RestStatus.OK;
-import static org.elasticsearch.rest.action.support.RestXContentBuilder.restContentBuilder;
 
 public class RestMultiTermVectorsAction extends BaseRestHandler {
 
@@ -48,44 +50,16 @@ public class RestMultiTermVectorsAction extends BaseRestHandler {
     }
 
     @Override
-    public void handleRequest(final RestRequest request, final RestChannel channel) {
-        
+    public void handleRequest(final RestRequest request, final RestChannel channel) throws Exception {
         MultiTermVectorsRequest multiTermVectorsRequest = new MultiTermVectorsRequest();
         multiTermVectorsRequest.listenerThreaded(false);
         TermVectorRequest template = new TermVectorRequest();
+        template.index(request.param("index"));
+        template.type(request.param("type"));
         RestTermVectorAction.readURIParameters(template, request);
-       
-        try {
-            multiTermVectorsRequest.add(template, request.content());
-        } catch (Throwable t) {
-            try {
-                channel.sendResponse(new XContentThrowableRestResponse(request, t));
-            } catch (Throwable tIO) {
-                logger.error("Failed to send failure response", tIO);
-            }
-            return;
-        }
+        multiTermVectorsRequest.ids(Strings.commaDelimitedListToStringArray(request.param("ids")));
+        multiTermVectorsRequest.add(template, RestActions.getRestContent(request));
 
-        client.multiTermVectors(multiTermVectorsRequest, new ActionListener<MultiTermVectorsResponse>() {
-            @Override
-            public void onResponse(MultiTermVectorsResponse response) {
-                try {
-                    XContentBuilder builder = restContentBuilder(request);
-                    response.toXContent(builder, request);
-                    channel.sendResponse(new XContentRestResponse(request, OK, builder));
-                } catch (Throwable t) {
-                    onFailure(t);
-                }
-            }
-
-            @Override
-            public void onFailure(Throwable e) {
-                try {
-                    channel.sendResponse(new XContentThrowableRestResponse(request, e));
-                } catch (Throwable t) {
-                    logger.error("Failed to send failure response", t);
-                }
-            }
-        });
+        client.multiTermVectors(multiTermVectorsRequest, new RestToXContentListener<MultiTermVectorsResponse>(channel));
     }
 }

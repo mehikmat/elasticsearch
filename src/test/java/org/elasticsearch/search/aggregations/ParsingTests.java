@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -23,6 +23,10 @@ import org.elasticsearch.action.search.SearchPhaseExecutionException;
 import org.elasticsearch.common.xcontent.json.JsonXContent;
 import org.elasticsearch.test.ElasticsearchIntegrationTest;
 import org.junit.Test;
+
+import java.security.SecureRandom;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class ParsingTests extends ElasticsearchIntegrationTest {
 
@@ -46,4 +50,35 @@ public class ParsingTests extends ElasticsearchIntegrationTest {
             .endObject()).execute().actionGet();
     }
 
+    @Test(expected=SearchPhaseExecutionException.class)
+    public void testInvalidAggregationName() throws Exception {
+
+        Matcher matcher = Pattern.compile("[a-zA-Z0-9\\-_]+").matcher("");
+        String name;
+        SecureRandom rand = new SecureRandom();
+        int len = randomIntBetween(1, 5);
+        char[] word = new char[len];
+        while(true) {
+            for (int i = 0; i < word.length; i++) {
+                word[i] = (char) rand.nextInt(127);
+            }
+            name = String.valueOf(word);
+            if (!matcher.reset(name).matches()) {
+                break;
+            }
+        }
+
+        createIndex("idx");
+        client().prepareSearch("idx").setAggregations(JsonXContent.contentBuilder()
+            .startObject()
+                .startObject(name)
+                    .startObject("filter")
+                        .startObject("range")
+                            .startObject("stock")
+                                .field("gt", 0)
+                            .endObject()
+                        .endObject()
+                    .endObject()
+            .endObject()).execute().actionGet();
+    }
 }

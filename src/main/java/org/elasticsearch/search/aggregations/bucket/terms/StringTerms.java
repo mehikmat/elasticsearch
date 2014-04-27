@@ -1,13 +1,13 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,7 +16,6 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.search.aggregations.bucket.terms;
 
 import org.apache.lucene.util.BytesRef;
@@ -42,7 +41,7 @@ public class StringTerms extends InternalTerms {
 
     public static final InternalAggregation.Type TYPE = new Type("terms", "sterms");
 
-    public static AggregationStreams.Stream STREAM = new AggregationStreams.Stream() {
+    public static final AggregationStreams.Stream STREAM = new AggregationStreams.Stream() {
         @Override
         public StringTerms readResult(StreamInput in) throws IOException {
             StringTerms buckets = new StringTerms();
@@ -58,7 +57,7 @@ public class StringTerms extends InternalTerms {
 
     public static class Bucket extends InternalTerms.Bucket {
 
-        final BytesRef termBytes;
+        BytesRef termBytes;
 
         public Bucket(BytesRef term, long docCount, InternalAggregations aggregations) {
             super(docCount, aggregations);
@@ -66,7 +65,12 @@ public class StringTerms extends InternalTerms {
         }
 
         @Override
-        public Text getKey() {
+        public String getKey() {
+            return termBytes.utf8ToString();
+        }
+
+        @Override
+        public Text getKeyAsText() {
             return new BytesText(new BytesArray(termBytes));
         }
 
@@ -77,15 +81,15 @@ public class StringTerms extends InternalTerms {
         }
 
         @Override
-        protected int compareTerm(Terms.Bucket other) {
+        int compareTerm(Terms.Bucket other) {
             return BytesRef.getUTF8SortedAsUnicodeComparator().compare(termBytes, ((Bucket) other).termBytes);
         }
     }
 
     StringTerms() {} // for serialization
 
-    public StringTerms(String name, InternalOrder order, int requiredSize, Collection<InternalTerms.Bucket> buckets) {
-        super(name, order, requiredSize, buckets);
+    public StringTerms(String name, InternalOrder order, int requiredSize, long minDocCount, Collection<InternalTerms.Bucket> buckets) {
+        super(name, order, requiredSize, minDocCount, buckets);
     }
 
     @Override
@@ -97,9 +101,10 @@ public class StringTerms extends InternalTerms {
     public void readFrom(StreamInput in) throws IOException {
         this.name = in.readString();
         this.order = InternalOrder.Streams.readOrder(in);
-        this.requiredSize = in.readVInt();
+        this.requiredSize = readSize(in);
+        this.minDocCount = in.readVLong();
         int size = in.readVInt();
-        List<InternalTerms.Bucket> buckets = new ArrayList<InternalTerms.Bucket>(size);
+        List<InternalTerms.Bucket> buckets = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
             buckets.add(new Bucket(in.readBytesRef(), in.readVLong(), InternalAggregations.readAggregations(in)));
         }
@@ -111,7 +116,8 @@ public class StringTerms extends InternalTerms {
     public void writeTo(StreamOutput out) throws IOException {
         out.writeString(name);
         InternalOrder.Streams.writeOrder(order, out);
-        out.writeVInt(requiredSize);
+        writeSize(requiredSize, out);
+        out.writeVLong(minDocCount);
         out.writeVInt(buckets.size());
         for (InternalTerms.Bucket bucket : buckets) {
             out.writeBytesRef(((Bucket) bucket).termBytes);

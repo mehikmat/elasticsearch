@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -104,7 +104,7 @@ public final class BloomFilterPostingsFormat extends PostingsFormat {
 
     public final class BloomFilteredFieldsProducer extends FieldsProducer {
         private FieldsProducer delegateFieldsProducer;
-        HashMap<String, BloomFilter> bloomsByFieldName = new HashMap<String, BloomFilter>();
+        HashMap<String, BloomFilter> bloomsByFieldName = new HashMap<>();
 
         // for internal use only
         FieldsProducer getDelegate() {
@@ -335,7 +335,7 @@ public final class BloomFilterPostingsFormat extends PostingsFormat {
 
     final class BloomFilteredFieldsConsumer extends FieldsConsumer {
         private FieldsConsumer delegateFieldsConsumer;
-        private Map<FieldInfo, BloomFilter> bloomFilters = new HashMap<FieldInfo, BloomFilter>();
+        private Map<FieldInfo, BloomFilter> bloomFilters = new HashMap<>();
         private SegmentWriteState state;
 
         // private PostingsFormat delegatePostingsFormat;
@@ -370,7 +370,7 @@ public final class BloomFilterPostingsFormat extends PostingsFormat {
         public void close() throws IOException {
             delegateFieldsConsumer.close();
             // Now we are done accumulating values for these fields
-            List<Entry<FieldInfo, BloomFilter>> nonSaturatedBlooms = new ArrayList<Map.Entry<FieldInfo, BloomFilter>>();
+            List<Entry<FieldInfo, BloomFilter>> nonSaturatedBlooms = new ArrayList<>();
 
             for (Entry<FieldInfo, BloomFilter> entry : bloomFilters.entrySet()) {
                 nonSaturatedBlooms.add(entry);

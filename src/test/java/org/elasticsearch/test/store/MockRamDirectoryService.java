@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -20,14 +20,15 @@
 package org.elasticsearch.test.store;
 
 import org.apache.lucene.store.Directory;
-import org.elasticsearch.cache.memory.ByteBufferCache;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.index.shard.AbstractIndexShardComponent;
 import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.index.store.DirectoryService;
+import org.elasticsearch.test.ElasticsearchIntegrationTest;
 
 import java.io.IOException;
+import java.util.Random;
 
 public class MockRamDirectoryService extends AbstractIndexShardComponent implements DirectoryService {
 
@@ -35,10 +36,12 @@ public class MockRamDirectoryService extends AbstractIndexShardComponent impleme
     private final DirectoryService delegateService;
 
     @Inject
-    public MockRamDirectoryService(ShardId shardId, Settings indexSettings, ByteBufferCache byteBufferCache) {
+    public MockRamDirectoryService(ShardId shardId, Settings indexSettings) {
         super(shardId, indexSettings);
-        helper = new MockDirectoryHelper(shardId, indexSettings, logger);
-        delegateService = helper.randomRamDirecoryService(byteBufferCache);
+        final long seed = indexSettings.getAsLong(ElasticsearchIntegrationTest.SETTING_INDEX_SEED, 0l);
+        Random random = new Random(seed);
+        helper = new MockDirectoryHelper(shardId, indexSettings, logger, random, seed);
+        delegateService = helper.randomRamDirectoryService();
     }
 
     @Override

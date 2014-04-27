@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -31,7 +31,6 @@ import org.junit.Test;
 
 import static org.elasticsearch.test.hamcrest.ElasticsearchGeoAssertions.assertMultiLineString;
 import static org.elasticsearch.test.hamcrest.ElasticsearchGeoAssertions.assertMultiPolygon;
-import static org.junit.Assert.assertEquals;
 /**
  * Tests for {@link ShapeBuilder}
  */
@@ -155,7 +154,7 @@ public class ShapeBuilderTests extends ElasticsearchTestCase {
                 .point(-40.0, -50.0)
                 .point(40.0, -50.0)
             .close().build();
-            assert false : "Polygon self-intersection";
+            fail("Polygon self-intersection");
         } catch (Throwable e) {}
         
     }

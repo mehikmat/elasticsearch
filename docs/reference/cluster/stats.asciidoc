@@ -1,8 +1,6 @@
 [[cluster-stats]]
 == Cluster Stats
 
-added[0.90.8]
-
 The Cluster Stats API allows to retrieve statistics from a cluster wide perspective.
 The API returns basic index metrics (shard numbers, store size, memory usage) and
 information about the current nodes that form the cluster (number, roles, os, jvm
@@ -110,7 +108,11 @@ Will return, for example:
          "cpu": {
             "percent": 3
          },
-         "avg_open_file_descriptors": 218
+         "open_file_descriptors": {
+            "min": 200,
+            "max": 346,
+            "avg": 273
+         }
       },
       "jvm": {
          "max_uptime": "24s",

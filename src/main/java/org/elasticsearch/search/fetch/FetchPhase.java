@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -22,6 +22,7 @@ package org.elasticsearch.search.fetch;
 import com.google.common.collect.ImmutableMap;
 import org.apache.lucene.index.AtomicReaderContext;
 import org.apache.lucene.index.ReaderUtil;
+import org.elasticsearch.ElasticsearchIllegalArgumentException;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.text.StringAndBytesText;
 import org.elasticsearch.common.text.Text;
@@ -33,6 +34,7 @@ import org.elasticsearch.search.SearchHitField;
 import org.elasticsearch.search.SearchParseElement;
 import org.elasticsearch.search.SearchPhase;
 import org.elasticsearch.search.fetch.explain.ExplainFetchSubPhase;
+import org.elasticsearch.search.fetch.fielddata.FieldDataFieldsFetchSubPhase;
 import org.elasticsearch.search.fetch.matchedqueries.MatchedQueriesFetchSubPhase;
 import org.elasticsearch.search.fetch.partial.PartialFieldsFetchSubPhase;
 import org.elasticsearch.search.fetch.script.ScriptFieldsFetchSubPhase;
@@ -60,9 +62,9 @@ public class FetchPhase implements SearchPhase {
     @Inject
     public FetchPhase(HighlightPhase highlightPhase, ScriptFieldsFetchSubPhase scriptFieldsPhase, PartialFieldsFetchSubPhase partialFieldsPhase,
                       MatchedQueriesFetchSubPhase matchedQueriesPhase, ExplainFetchSubPhase explainPhase, VersionFetchSubPhase versionPhase,
-                      FetchSourceSubPhase fetchSourceSubPhase) {
+                      FetchSourceSubPhase fetchSourceSubPhase, FieldDataFieldsFetchSubPhase fieldDataFieldsFetchSubPhase) {
         this.fetchSubPhases = new FetchSubPhase[]{scriptFieldsPhase, partialFieldsPhase, matchedQueriesPhase, explainPhase, highlightPhase,
-                fetchSourceSubPhase, versionPhase};
+                fetchSourceSubPhase, versionPhase, fieldDataFieldsFetchSubPhase};
     }
 
     @Override
@@ -117,9 +119,14 @@ public class FetchPhase implements SearchPhase {
                     continue;
                 }
                 FieldMappers x = context.smartNameFieldMappers(fieldName);
-                if (x != null && x.mapper().fieldType().stored()) {
+                if (x == null) {
+                    // Only fail if we know it is a object field, missing paths / fields shouldn't fail.
+                    if (context.smartNameObjectMapper(fieldName) != null) {
+                        throw new ElasticsearchIllegalArgumentException("field [" + fieldName + "] isn't a leaf field");
+                    }
+                } else if (x.mapper().fieldType().stored()) {
                     if (fieldNames == null) {
-                        fieldNames = new HashSet<String>();
+                        fieldNames = new HashSet<>();
                     }
                     fieldNames.add(x.mapper().names().indexName());
                 } else {
@@ -151,7 +158,7 @@ public class FetchPhase implements SearchPhase {
 
             Map<String, SearchHitField> searchFields = null;
             if (!fieldsVisitor.fields().isEmpty()) {
-                searchFields = new HashMap<String, SearchHitField>(fieldsVisitor.fields().size());
+                searchFields = new HashMap<>(fieldsVisitor.fields().size());
                 for (Map.Entry<String, List<Object>> entry : fieldsVisitor.fields().entrySet()) {
                     searchFields.put(entry.getKey(), new InternalSearchHitField(entry.getKey(), entry.getValue()));
                 }
@@ -180,18 +187,20 @@ public class FetchPhase implements SearchPhase {
             }
             if (extractFieldNames != null) {
                 for (String extractFieldName : extractFieldNames) {
-                    Object value = context.lookup().source().extractValue(extractFieldName);
-                    if (value != null) {
+                    List<Object> values = context.lookup().source().extractRawValues(extractFieldName);
+                    if (!values.isEmpty()) {
                         if (searchHit.fieldsOrNull() == null) {
                             searchHit.fields(new HashMap<String, SearchHitField>(2));
                         }
 
                         SearchHitField hitField = searchHit.fields().get(extractFieldName);
                         if (hitField == null) {
-                            hitField = new InternalSearchHitField(extractFieldName, new ArrayList<Object>(2));
+                            hitField = new InternalSearchHitField(extractFieldName, new ArrayList<>(2));
                             searchHit.fields().put(extractFieldName, hitField);
                         }
-                        hitField.values().add(value);
+                        for (Object value : values) {
+                            hitField.values().add(value);
+                        }
                     }
                 }
             }

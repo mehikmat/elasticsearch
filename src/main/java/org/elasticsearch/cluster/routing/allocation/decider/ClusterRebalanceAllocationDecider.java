@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,15 +19,11 @@
 
 package org.elasticsearch.cluster.routing.allocation.decider;
 
-import org.elasticsearch.cluster.routing.MutableShardRouting;
-import org.elasticsearch.cluster.routing.RoutingNode;
-import org.elasticsearch.cluster.routing.RoutingNodes;
 import org.elasticsearch.cluster.routing.ShardRouting;
 import org.elasticsearch.cluster.routing.allocation.RoutingAllocation;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.settings.Settings;
 
-import java.util.List;
 import java.util.Locale;
 
 /**
@@ -48,6 +44,8 @@ import java.util.Locale;
  * </ul>
  */
 public class ClusterRebalanceAllocationDecider extends AllocationDecider {
+
+    public static final String NAME = "cluster_rebalance";
 
     /**
      * An enum representation for the configured re-balance type. 
@@ -91,27 +89,27 @@ public class ClusterRebalanceAllocationDecider extends AllocationDecider {
         if (type == ClusterRebalanceType.INDICES_PRIMARIES_ACTIVE) {
             // check if there are unassigned primaries.
             if ( allocation.routingNodes().hasUnassignedPrimaries() ) {
-                return Decision.NO;
+                return allocation.decision(Decision.NO, NAME, "cluster has unassigned primary shards");
             }
             // check if there are initializing primaries that don't have a relocatingNodeId entry.
             if ( allocation.routingNodes().hasInactivePrimaries() ) {
-                return Decision.NO;
+                return allocation.decision(Decision.NO, NAME, "cluster has inactive primary shards");
             }
 
-            return Decision.YES;
+            return allocation.decision(Decision.YES, NAME, "all primary shards are active");
         }
         if (type == ClusterRebalanceType.INDICES_ALL_ACTIVE) {
             // check if there are unassigned shards.
             if ( allocation.routingNodes().hasUnassignedShards() ) {
-                return Decision.NO;
+                return allocation.decision(Decision.NO, NAME, "cluster has unassigned shards");
             }
             // in case all indices are assigned, are there initializing shards which
             // are not relocating?
             if ( allocation.routingNodes().hasInactiveShards() ) {
-                return Decision.NO;
+                return allocation.decision(Decision.NO, NAME, "cluster has inactive shards");
             }
         }
         // type == Type.ALWAYS
-        return Decision.YES;
+        return allocation.decision(Decision.YES, NAME, "all shards are active");
     }
 }

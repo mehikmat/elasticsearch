@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -20,7 +20,6 @@
 package org.elasticsearch.monitor.fs;
 
 import com.google.common.collect.Iterators;
-import org.elasticsearch.Version;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.io.stream.StreamInput;
@@ -65,11 +64,7 @@ public class FsStats implements Iterable<FsStats.Info>, Streamable, ToXContent {
 
         @Override
         public void readFrom(StreamInput in) throws IOException {
-            if (in.getVersion().after(Version.V_0_90_7)) {
-                path = in.readOptionalString();
-            } else {
-                path = in.readString();
-            }
+            path = in.readOptionalString();
             mount = in.readOptionalString();
             dev = in.readOptionalString();
             total = in.readLong();
@@ -85,11 +80,7 @@ public class FsStats implements Iterable<FsStats.Info>, Streamable, ToXContent {
 
         @Override
         public void writeTo(StreamOutput out) throws IOException {
-            if (out.getVersion().after(Version.V_0_90_7)) {
-                out.writeOptionalString(path); // total aggregates do not have a path
-            } else {
-                out.writeString(path);
-            }
+            out.writeOptionalString(path); // total aggregates do not have a path
             out.writeOptionalString(mount);
             out.writeOptionalString(dev);
             out.writeLong(total);
@@ -310,7 +301,7 @@ public class FsStats implements Iterable<FsStats.Info>, Streamable, ToXContent {
             return total;
         }
         Info res = new Info();
-        Set<String> seenDevices = new HashSet<String>(infos.length);
+        Set<String> seenDevices = new HashSet<>(infos.length);
         for (Info subInfo : infos) {
             if (subInfo.dev != null) {
                 if (!seenDevices.add(subInfo.dev)) {

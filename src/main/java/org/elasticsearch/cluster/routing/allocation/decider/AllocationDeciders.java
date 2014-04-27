@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -52,7 +52,11 @@ public class AllocationDeciders extends AllocationDecider {
             Decision decision = allocationDecider.canRebalance(shardRouting, allocation);
             // short track if a NO is returned.
             if (decision == Decision.NO) {
-                return decision;
+                if (!allocation.debugDecision()) {
+                    return decision;
+                } else {
+                    ret.add(decision);
+                }
             } else if (decision != Decision.ALWAYS) {
                 ret.add(decision);
             }
@@ -73,7 +77,12 @@ public class AllocationDeciders extends AllocationDecider {
                 if (logger.isTraceEnabled()) {
                     logger.trace("Can not allocate [{}] on node [{}] due to [{}]", shardRouting, node.nodeId(), allocationDecider.getClass().getSimpleName());
                 }
-                return decision;
+                // short circuit only if debugging is not enabled
+                if (!allocation.debugDecision()) {
+                    return decision;
+                } else {
+                    ret.add(decision);
+                }
             } else if (decision != Decision.ALWAYS) {
                 // the assumption is that a decider that returns the static instance Decision#ALWAYS
                 // does not really implements canAllocate
@@ -99,7 +108,11 @@ public class AllocationDeciders extends AllocationDecider {
                 if (logger.isTraceEnabled()) {
                     logger.trace("Shard [{}] can not remain on node [{}] due to [{}]", shardRouting, node.nodeId(), allocationDecider.getClass().getSimpleName());
                 }
-                return decision;
+                if (!allocation.debugDecision()) {
+                    return decision;
+                } else {
+                    ret.add(decision);
+                }
             } else if (decision != Decision.ALWAYS) {
                 ret.add(decision);
             }
@@ -113,7 +126,11 @@ public class AllocationDeciders extends AllocationDecider {
             Decision decision = allocationDecider.canAllocate(shardRouting, allocation);
             // short track if a NO is returned.
             if (decision == Decision.NO) {
-                return decision;
+                if (!allocation.debugDecision()) {
+                    return decision;
+                } else {
+                    ret.add(decision);
+                }
             } else if (decision != Decision.ALWAYS) {
                 ret.add(decision);
             }
@@ -127,7 +144,11 @@ public class AllocationDeciders extends AllocationDecider {
             Decision decision = allocationDecider.canAllocate(node, allocation);
             // short track if a NO is returned.
             if (decision == Decision.NO) {
-                return decision;
+                if (!allocation.debugDecision()) {
+                    return decision;
+                } else {
+                    ret.add(decision);
+                }
             } else if (decision != Decision.ALWAYS) {
                 ret.add(decision);
             }

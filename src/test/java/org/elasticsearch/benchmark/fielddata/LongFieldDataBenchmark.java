@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -37,6 +37,8 @@ import org.elasticsearch.index.fielddata.IndexNumericFieldData;
 import org.elasticsearch.index.mapper.ContentPath;
 import org.elasticsearch.index.mapper.Mapper.BuilderContext;
 import org.elasticsearch.index.mapper.core.LongFieldMapper;
+import org.elasticsearch.index.merge.Merges;
+import org.elasticsearch.indices.fielddata.breaker.DummyCircuitBreakerService;
 
 import java.util.Random;
 
@@ -50,6 +52,7 @@ public class LongFieldDataBenchmark {
             public int numValues() {
                 return 1;
             }
+
             @Override
             public long nextValue() {
                 return RANDOM.nextInt(16);
@@ -59,6 +62,7 @@ public class LongFieldDataBenchmark {
             public int numValues() {
                 return 1;
             }
+
             @Override
             public long nextValue() {
                 // somewhere in-between 2010 and 2012
@@ -69,6 +73,7 @@ public class LongFieldDataBenchmark {
             public int numValues() {
                 return RANDOM.nextInt(3);
             }
+
             @Override
             public long nextValue() {
                 // somewhere in-between 2010 and 2012
@@ -79,6 +84,7 @@ public class LongFieldDataBenchmark {
             public int numValues() {
                 return RANDOM.nextInt(3);
             }
+
             @Override
             public long nextValue() {
                 return 3 + RANDOM.nextInt(8);
@@ -88,6 +94,7 @@ public class LongFieldDataBenchmark {
             public int numValues() {
                 return RANDOM.nextFloat() < 0.1f ? 1 : 0;
             }
+
             @Override
             public long nextValue() {
                 return RANDOM.nextLong();
@@ -97,6 +104,7 @@ public class LongFieldDataBenchmark {
             public int numValues() {
                 return RANDOM.nextFloat() < 0.1f ? 1 + RANDOM.nextInt(5) : 0;
             }
+
             @Override
             public long nextValue() {
                 return RANDOM.nextLong();
@@ -106,12 +114,15 @@ public class LongFieldDataBenchmark {
             public int numValues() {
                 return 1 + RANDOM.nextInt(3);
             }
+
             @Override
             public long nextValue() {
                 return RANDOM.nextLong();
             }
         };
+
         public abstract int numValues();
+
         public abstract long nextValue();
     }
 
@@ -131,11 +142,11 @@ public class LongFieldDataBenchmark {
                 }
                 indexWriter.addDocument(doc);
             }
-            indexWriter.forceMerge(1);
+            Merges.forceMerge(indexWriter, 1);
             indexWriter.close();
 
             final DirectoryReader dr = DirectoryReader.open(dir);
-            final IndexFieldDataService fds = new IndexFieldDataService(new Index("dummy"));
+            final IndexFieldDataService fds = new IndexFieldDataService(new Index("dummy"), new DummyCircuitBreakerService());
             final LongFieldMapper mapper = new LongFieldMapper.Builder(fieldName).build(new BuilderContext(null, new ContentPath(1)));
             final IndexNumericFieldData<AtomicNumericFieldData> fd = fds.getForField(mapper);
             final long start = System.nanoTime();

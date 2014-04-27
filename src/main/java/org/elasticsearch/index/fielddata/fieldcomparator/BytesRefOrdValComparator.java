@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -85,7 +85,8 @@ public final class BytesRefOrdValComparator extends NestedWrappableComparator<By
        @lucene.internal */
     long bottomOrd;
 
-    final BytesRef tempBR = new BytesRef();
+    BytesRef top;
+    long topOrd;
 
     public BytesRefOrdValComparator(IndexFieldData.WithOrdinals<?> indexFieldData, int numHits, SortMode sortMode, BytesRef missingValue) {
         this.indexFieldData = indexFieldData;
@@ -99,7 +100,7 @@ public final class BytesRefOrdValComparator extends NestedWrappableComparator<By
     @Override
     public int compare(int slot1, int slot2) {
         if (readerGen[slot1] == readerGen[slot2]) {
-            return LongValuesComparator.compare(ords[slot1], ords[slot2]);
+            return Long.compare(ords[slot1], ords[slot2]);
         }
 
         final BytesRef val1 = values[slot1];
@@ -121,6 +122,11 @@ public final class BytesRefOrdValComparator extends NestedWrappableComparator<By
     }
 
     @Override
+    public int compareTop(int doc) throws IOException {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     public int compareBottomMissing() {
         throw new UnsupportedOperationException();
     }
@@ -136,7 +142,7 @@ public final class BytesRefOrdValComparator extends NestedWrappableComparator<By
     }
 
     @Override
-    public int compareDocToValue(int doc, BytesRef value) {
+    public int compareTopMissing() {
         throw new UnsupportedOperationException();
     }
 
@@ -147,7 +153,7 @@ public final class BytesRefOrdValComparator extends NestedWrappableComparator<By
         public PerSegmentComparator(BytesValues.WithOrdinals termsIndex) {
             this.readerOrds = termsIndex.ordinals();
             this.termsIndex = termsIndex;
-            if (readerOrds.getNumOrds() > Long.MAX_VALUE / 4) {
+            if (readerOrds.getMaxOrd() > Long.MAX_VALUE / 4) {
                 throw new IllegalStateException("Current terms index pretends it has more than " + (Long.MAX_VALUE / 4) + " ordinals, which is unsupported by this impl");
             }
         }
@@ -168,6 +174,11 @@ public final class BytesRefOrdValComparator extends NestedWrappableComparator<By
         }
 
         @Override
+        public void setTopValue(BytesRef value) {
+            BytesRefOrdValComparator.this.setTopValue(value);
+        }
+
+        @Override
         public BytesRef value(int slot) {
             return BytesRefOrdValComparator.this.value(slot);
         }
@@ -185,13 +196,6 @@ public final class BytesRefOrdValComparator extends NestedWrappableComparator<By
             return val1.compareTo(val2);
         }
 
-        @Override
-        public int compareDocToValue(int doc, BytesRef value) {
-            final long ord = getOrd(doc);
-            final BytesRef docValue = ord == Ordinals.MISSING_ORDINAL ? missingValue : termsIndex.getValueByOrd(ord);
-            return compareValues(docValue, value);
-        }
-
         protected long getOrd(int doc) {
             return readerOrds.getOrd(doc);
         }
@@ -201,13 +205,34 @@ public final class BytesRefOrdValComparator extends NestedWrappableComparator<By
             assert bottomSlot != -1;
             final long docOrd = getOrd(doc);
             final long comparableOrd = docOrd == Ordinals.MISSING_ORDINAL ? missingOrd : docOrd << 2;
-            return LongValuesComparator.compare(bottomOrd, comparableOrd);
+            return Long.compare(bottomOrd, comparableOrd);
+        }
+
+        @Override
+        public int compareTop(int doc) throws IOException {
+            final long ord = getOrd(doc);
+            if (ord == Ordinals.MISSING_ORDINAL) {
+                return compareTopMissing();
+            } else {
+                final long comparableOrd = ord << 2;
+                return Long.compare(topOrd, comparableOrd);
+            }
         }
 
         @Override
         public int compareBottomMissing() {
             assert bottomSlot != -1;
-            return LongValuesComparator.compare(bottomOrd, missingOrd);
+            return Long.compare(bottomOrd, missingOrd);
+        }
+
+        @Override
+        public int compareTopMissing() {
+            int cmp =  Long.compare(topOrd, missingOrd);
+            if (cmp == 0) {
+                return compareValues(top, missingValue);
+            } else {
+                return cmp;
+            }
         }
 
         @Override
@@ -272,7 +297,7 @@ public final class BytesRefOrdValComparator extends NestedWrappableComparator<By
     @Override
     public FieldComparator<BytesRef> setNextReader(AtomicReaderContext context) throws IOException {
         termsIndex = indexFieldData.load(context).getBytesValues(false);
-        assert termsIndex.ordinals() != null && termsIndex.ordinals().ordinals() != null;
+        assert termsIndex.ordinals() != null;
         if (missingValue == null) {
             missingOrd = Ordinals.MISSING_ORDINAL;
         } else {
@@ -280,7 +305,7 @@ public final class BytesRefOrdValComparator extends NestedWrappableComparator<By
             assert consistentInsertedOrd(termsIndex, missingOrd, missingValue);
         }
         FieldComparator<BytesRef> perSegComp = null;
-        assert termsIndex.ordinals() != null && termsIndex.ordinals().ordinals() != null;
+        assert termsIndex.ordinals() != null;
         if (termsIndex.isMultiValued()) {
             perSegComp = new PerSegmentComparator(termsIndex) {
                 @Override
@@ -294,6 +319,12 @@ public final class BytesRefOrdValComparator extends NestedWrappableComparator<By
         currentReaderGen++;
         if (bottomSlot != -1) {
             perSegComp.setBottom(bottomSlot);
+        }
+        if (top != null) {
+            perSegComp.setTopValue(top);
+            topOrd = ordInCurrentReader(termsIndex, top);
+        } else {
+            topOrd = missingOrd;
         }
         return perSegComp;
     }
@@ -327,12 +358,17 @@ public final class BytesRefOrdValComparator extends NestedWrappableComparator<By
     }
 
     @Override
+    public void setTopValue(BytesRef value) {
+        this.top = value;
+    }
+
+    @Override
     public BytesRef value(int slot) {
         return values[slot];
     }
 
     final protected static long binarySearch(BytesValues.WithOrdinals a, BytesRef key) {
-        return binarySearch(a, key, 1, a.ordinals().getNumOrds());
+        return binarySearch(a, key, Ordinals.MIN_ORDINAL, a.ordinals().getMaxOrd() - 1);
     }
 
     final protected static long binarySearch(BytesValues.WithOrdinals a, BytesRef key, long low, long high) {

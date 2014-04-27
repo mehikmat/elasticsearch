@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -20,8 +20,8 @@
 package org.elasticsearch.index.query;
 
 import org.apache.lucene.search.Filter;
-import org.elasticsearch.ElasticSearchIllegalArgumentException;
-import org.elasticsearch.ElasticSearchParseException;
+import org.elasticsearch.ElasticsearchIllegalArgumentException;
+import org.elasticsearch.ElasticsearchParseException;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.geo.GeoHashUtils;
@@ -38,6 +38,7 @@ import org.elasticsearch.index.mapper.core.StringFieldMapper;
 import org.elasticsearch.index.mapper.geo.GeoPointFieldMapper;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -71,9 +72,9 @@ public class GeohashCellFilter {
      * @param geohashes   optional array of additional geohashes
      * @return a new GeoBoundinboxfilter
      */
-    public static Filter create(QueryParseContext context, GeoPointFieldMapper fieldMapper, String geohash, @Nullable List<String> geohashes) {
+    public static Filter create(QueryParseContext context, GeoPointFieldMapper fieldMapper, String geohash, @Nullable List<CharSequence> geohashes) {
         if (fieldMapper.geoHashStringMapper() == null) {
-            throw new ElasticSearchIllegalArgumentException("geohash filter needs geohash_prefix to be enabled");
+            throw new ElasticsearchIllegalArgumentException("geohash filter needs geohash_prefix to be enabled");
         }
 
         StringFieldMapper geoHashMapper = fieldMapper.geoHashStringMapper();
@@ -140,7 +141,7 @@ public class GeohashCellFilter {
         }
 
         public Builder precision(String precision) {
-            double meters = DistanceUnit.parse(precision, DistanceUnit.METERS, DistanceUnit.METERS);
+            double meters = DistanceUnit.parse(precision, DistanceUnit.DEFAULT, DistanceUnit.METERS);
             return precision(GeoUtils.geoHashLevelsForPrecision(meters));
         }
 
@@ -191,7 +192,7 @@ public class GeohashCellFilter {
 
             XContentParser.Token token;
             if ((token = parser.currentToken()) != Token.START_OBJECT) {
-                throw new ElasticSearchParseException(NAME + " must be an object");
+                throw new ElasticsearchParseException(NAME + " must be an object");
             }
 
             while ((token = parser.nextToken()) != Token.END_OBJECT) {
@@ -203,7 +204,7 @@ public class GeohashCellFilter {
                         if(token == Token.VALUE_NUMBER) {
                             levels = parser.intValue();
                         } else if(token == Token.VALUE_STRING) {
-                            double meters = DistanceUnit.parse(parser.text(), DistanceUnit.METERS, DistanceUnit.METERS);
+                            double meters = DistanceUnit.parse(parser.text(), DistanceUnit.DEFAULT, DistanceUnit.METERS);
                             levels = GeoUtils.geoHashLevelsForPrecision(meters);
                         }
                     } else if (NEIGHBORS.equals(field)) {
@@ -216,16 +217,16 @@ public class GeohashCellFilter {
                             // A string indicates either a gehash or a lat/lon string
                             String location = parser.text();
                             if(location.indexOf(",")>0) {
-                                geohash = GeoPoint.parse(parser).geohash();
+                                geohash = GeoUtils.parseGeoPoint(parser).geohash();
                             } else {
                                 geohash = location;
                             }
                         } else {
-                            geohash = GeoPoint.parse(parser).geohash();
+                            geohash = GeoUtils.parseGeoPoint(parser).geohash();
                         }
                     }
                 } else {
-                    throw new ElasticSearchParseException("unexpected token [" + token + "]");
+                    throw new ElasticsearchParseException("unexpected token [" + token + "]");
                 }
             }
 
@@ -254,7 +255,7 @@ public class GeohashCellFilter {
             }
 
             if (neighbors) {
-                return create(parseContext, geoMapper, geohash, GeoHashUtils.neighbors(geohash));
+                return create(parseContext, geoMapper, geohash, GeoHashUtils.addNeighbors(geohash, new ArrayList<CharSequence>(8)));
             } else {
                 return create(parseContext, geoMapper, geohash, null);
             }

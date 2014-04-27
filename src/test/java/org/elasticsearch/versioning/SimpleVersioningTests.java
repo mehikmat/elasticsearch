@@ -1,13 +1,13 @@
 /*
- * Licensed to Elastic Search and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. Elastic Search licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,7 +16,6 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.versioning;
 
 import org.elasticsearch.action.bulk.BulkResponse;
@@ -49,7 +48,7 @@ public class SimpleVersioningTests extends ElasticsearchIntegrationTest {
         // Note - external version doesn't throw version conflicts on deletes of non existent records. This is different from internal versioning
 
         DeleteResponse deleteResponse = client().prepareDelete("test", "type", "1").setVersion(17).setVersionType(VersionType.EXTERNAL).execute().actionGet();
-        assertThat(deleteResponse.isNotFound(), equalTo(true));
+        assertThat(deleteResponse.isFound(), equalTo(false));
 
         // this should conflict with the delete command transaction which told us that the object was deleted at version 17.
         assertThrows(
@@ -60,6 +59,84 @@ public class SimpleVersioningTests extends ElasticsearchIntegrationTest {
         IndexResponse indexResponse = client().prepareIndex("test", "type", "1").setSource("field1", "value1_1").setVersion(18).
                 setVersionType(VersionType.EXTERNAL).execute().actionGet();
         assertThat(indexResponse.getVersion(), equalTo(18L));
+    }
+
+    @Test
+    public void testForce() throws Exception {
+        createIndex("test");
+
+        IndexResponse indexResponse = client().prepareIndex("test", "type", "1").setSource("field1", "value1_1").setVersion(12).setVersionType(VersionType.FORCE).get();
+        assertThat(indexResponse.getVersion(), equalTo(12l));
+
+        indexResponse = client().prepareIndex("test", "type", "1").setSource("field1", "value1_2").setVersion(12).setVersionType(VersionType.FORCE).get();
+        assertThat(indexResponse.getVersion(), equalTo(12l));
+
+        indexResponse = client().prepareIndex("test", "type", "1").setSource("field1", "value1_2").setVersion(14).setVersionType(VersionType.FORCE).get();
+        assertThat(indexResponse.getVersion(), equalTo(14l));
+
+        indexResponse = client().prepareIndex("test", "type", "1").setSource("field1", "value1_1").setVersion(13).setVersionType(VersionType.FORCE).get();
+        assertThat(indexResponse.getVersion(), equalTo(13l));
+
+        client().admin().indices().prepareRefresh().execute().actionGet();
+        if (randomBoolean()) {
+            refresh();
+        }
+        for (int i = 0; i < 10; i++) {
+            assertThat(client().prepareGet("test", "type", "1").get().getVersion(), equalTo(13l));
+        }
+
+        // deleting with a lower version works.
+        long v= randomIntBetween(12,14);
+        DeleteResponse deleteResponse = client().prepareDelete("test", "type", "1").setVersion(v).setVersionType(VersionType.FORCE).get();
+        assertThat(deleteResponse.isFound(), equalTo(true));
+        assertThat(deleteResponse.getVersion(), equalTo(v));
+    }
+
+    @Test
+    public void testExternalGTE() throws Exception {
+        createIndex("test");
+
+        IndexResponse indexResponse = client().prepareIndex("test", "type", "1").setSource("field1", "value1_1").setVersion(12).setVersionType(VersionType.EXTERNAL_GTE).get();
+        assertThat(indexResponse.getVersion(), equalTo(12l));
+
+        indexResponse = client().prepareIndex("test", "type", "1").setSource("field1", "value1_2").setVersion(12).setVersionType(VersionType.EXTERNAL_GTE).get();
+        assertThat(indexResponse.getVersion(), equalTo(12l));
+
+        indexResponse = client().prepareIndex("test", "type", "1").setSource("field1", "value1_2").setVersion(14).setVersionType(VersionType.EXTERNAL_GTE).get();
+        assertThat(indexResponse.getVersion(), equalTo(14l));
+
+        assertThrows(client().prepareIndex("test", "type", "1").setSource("field1", "value1_1").setVersion(13).setVersionType(VersionType.EXTERNAL_GTE),
+                VersionConflictEngineException.class);
+
+        client().admin().indices().prepareRefresh().execute().actionGet();
+        if (randomBoolean()) {
+            refresh();
+        }
+        for (int i = 0; i < 10; i++) {
+            assertThat(client().prepareGet("test", "type", "1").get().getVersion(), equalTo(14l));
+        }
+
+        // deleting with a lower version fails.
+        assertThrows(
+                client().prepareDelete("test", "type", "1").setVersion(2).setVersionType(VersionType.EXTERNAL_GTE),
+                VersionConflictEngineException.class);
+
+        // Delete with a higher or equal version deletes all versions up to the given one.
+        long v= randomIntBetween(14,17);
+        DeleteResponse deleteResponse = client().prepareDelete("test", "type", "1").setVersion(v).setVersionType(VersionType.EXTERNAL_GTE).execute().actionGet();
+        assertThat(deleteResponse.isFound(), equalTo(true));
+        assertThat(deleteResponse.getVersion(), equalTo(v));
+
+        // Deleting with a lower version keeps on failing after a delete.
+        assertThrows(
+                client().prepareDelete("test", "type", "1").setVersion(2).setVersionType(VersionType.EXTERNAL_GTE).execute(),
+                VersionConflictEngineException.class);
+
+
+        // But delete with a higher version is OK.
+        deleteResponse = client().prepareDelete("test", "type", "1").setVersion(18).setVersionType(VersionType.EXTERNAL_GTE).execute().actionGet();
+        assertThat(deleteResponse.isFound(), equalTo(false));
+        assertThat(deleteResponse.getVersion(), equalTo(18l));
     }
 
     @Test
@@ -76,7 +153,9 @@ public class SimpleVersioningTests extends ElasticsearchIntegrationTest {
         assertThrows(client().prepareIndex("test", "type", "1").setSource("field1", "value1_1").setVersion(13).setVersionType(VersionType.EXTERNAL).execute(),
                      VersionConflictEngineException.class);
 
-        client().admin().indices().prepareRefresh().execute().actionGet();
+        if (randomBoolean()) {
+            refresh();
+        }
         for (int i = 0; i < 10; i++) {
             assertThat(client().prepareGet("test", "type", "1").execute().actionGet().getVersion(), equalTo(14l));
         }
@@ -88,7 +167,7 @@ public class SimpleVersioningTests extends ElasticsearchIntegrationTest {
 
         // Delete with a higher version deletes all versions up to the given one.
         DeleteResponse deleteResponse = client().prepareDelete("test", "type", "1").setVersion(17).setVersionType(VersionType.EXTERNAL).execute().actionGet();
-        assertThat(deleteResponse.isNotFound(), equalTo(false));
+        assertThat(deleteResponse.isFound(), equalTo(true));
         assertThat(deleteResponse.getVersion(), equalTo(17l));
 
         // Deleting with a lower version keeps on failing after a delete.
@@ -99,7 +178,7 @@ public class SimpleVersioningTests extends ElasticsearchIntegrationTest {
 
         // But delete with a higher version is OK.
         deleteResponse = client().prepareDelete("test", "type", "1").setVersion(18).setVersionType(VersionType.EXTERNAL).execute().actionGet();
-        assertThat(deleteResponse.isNotFound(), equalTo(true));
+        assertThat(deleteResponse.isFound(), equalTo(false));
         assertThat(deleteResponse.getVersion(), equalTo(18l));
 
 
@@ -109,11 +188,11 @@ public class SimpleVersioningTests extends ElasticsearchIntegrationTest {
 
 
         deleteResponse = client().prepareDelete("test", "type", "1").setVersion(20).setVersionType(VersionType.EXTERNAL).execute().actionGet();
-        assertThat(deleteResponse.isNotFound(), equalTo(false));
+        assertThat(deleteResponse.isFound(), equalTo(true));
         assertThat(deleteResponse.getVersion(), equalTo(20l));
 
         // Make sure that the next delete will be GC. Note we do it on the index settings so it will be cleaned up
-        HashMap<String,Object> newSettings = new HashMap<String, Object>();
+        HashMap<String,Object> newSettings = new HashMap<>();
         newSettings.put("index.gc_deletes",-1);
         client().admin().indices().prepareUpdateSettings("test").setSettings(newSettings).execute().actionGet();
 
@@ -193,16 +272,16 @@ public class SimpleVersioningTests extends ElasticsearchIntegrationTest {
         }
 
         DeleteResponse deleteResponse = client().prepareDelete("test", "type", "1").setVersion(2).execute().actionGet();
-        assertThat(deleteResponse.isNotFound(), equalTo(false));
+        assertThat(deleteResponse.isFound(), equalTo(true));
         assertThat(deleteResponse.getVersion(), equalTo(3l));
 
         assertThrows(client().prepareDelete("test", "type", "1").setVersion(2).execute(), VersionConflictEngineException.class);
 
 
         // This is intricate - the object was deleted but a delete transaction was with the right version. We add another one
-        // and thus the transcation is increased.
+        // and thus the transaction is increased.
         deleteResponse = client().prepareDelete("test", "type", "1").setVersion(3).execute().actionGet();
-        assertThat(deleteResponse.isNotFound(), equalTo(true));
+        assertThat(deleteResponse.isFound(), equalTo(false));
         assertThat(deleteResponse.getVersion(), equalTo(4l));
     }
 

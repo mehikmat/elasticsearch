@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,8 +19,8 @@
 
 package org.elasticsearch.index.search.shape;
 
-import org.elasticsearch.ElasticSearchIllegalArgumentException;
-import org.elasticsearch.ElasticSearchIllegalStateException;
+import org.elasticsearch.ElasticsearchIllegalArgumentException;
+import org.elasticsearch.ElasticsearchIllegalStateException;
 import org.elasticsearch.action.get.GetRequest;
 import org.elasticsearch.action.get.GetResponse;
 import org.elasticsearch.client.Client;
@@ -60,7 +60,7 @@ public class ShapeFetchService extends AbstractComponent {
     public ShapeBuilder fetch(String id, String type, String index, String path) throws IOException {
         GetResponse response = client.get(new GetRequest(index, type, id).preference("_local").operationThreaded(false)).actionGet();
         if (!response.isExists()) {
-            throw new ElasticSearchIllegalArgumentException("Shape with ID [" + id + "] in type [" + type + "] not found");
+            throw new ElasticsearchIllegalArgumentException("Shape with ID [" + id + "] in type [" + type + "] not found");
         }
 
         String[] pathElements = Strings.splitStringToArray(path, '.');
@@ -83,7 +83,7 @@ public class ShapeFetchService extends AbstractComponent {
                     }
                 }
             }
-            throw new ElasticSearchIllegalStateException("Shape with name [" + id + "] found but missing " + path + " field");
+            throw new ElasticsearchIllegalStateException("Shape with name [" + id + "] found but missing " + path + " field");
         } finally {
             if (parser != null) {
                 parser.close();

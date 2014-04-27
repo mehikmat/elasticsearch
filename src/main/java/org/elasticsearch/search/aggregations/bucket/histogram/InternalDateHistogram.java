@@ -1,13 +1,13 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,15 +16,16 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.search.aggregations.bucket.histogram;
 
+import com.carrotsearch.hppc.ObjectObjectOpenHashMap;
+import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.search.aggregations.AggregationStreams;
-import org.elasticsearch.search.aggregations.InternalAggregation;
 import org.elasticsearch.search.aggregations.InternalAggregations;
-import org.elasticsearch.search.aggregations.support.numeric.ValueFormatter;
+import org.elasticsearch.search.aggregations.support.format.ValueFormatter;
 import org.joda.time.DateTime;
+import org.joda.time.DateTimeZone;
 
 import java.io.IOException;
 import java.util.List;
@@ -32,10 +33,10 @@ import java.util.List;
 /**
  *
  */
-public class InternalDateHistogram extends AbstractHistogramBase<DateHistogram.Bucket> implements DateHistogram {
+public class InternalDateHistogram extends InternalHistogram<InternalDateHistogram.Bucket> implements DateHistogram {
 
-    public final static Type TYPE = new Type("date_histogram", "dhisto");
-    public final static Factory FACTORY = new Factory();
+    final static Type TYPE = new Type("date_histogram", "dhisto");
+    final static Factory FACTORY = new Factory();
 
     private final static AggregationStreams.Stream STREAM = new AggregationStreams.Stream() {
         @Override
@@ -50,23 +51,29 @@ public class InternalDateHistogram extends AbstractHistogramBase<DateHistogram.B
         AggregationStreams.registerStream(STREAM, TYPE.stream());
     }
 
-    static class Bucket extends AbstractHistogramBase.Bucket implements DateHistogram.Bucket {
+    static class Bucket extends InternalHistogram.Bucket implements DateHistogram.Bucket {
 
-        Bucket(long key, long docCount, InternalAggregations aggregations) {
-            super(key, docCount, aggregations);
+        Bucket(long key, long docCount, InternalAggregations aggregations, @Nullable ValueFormatter formatter) {
+            super(key, docCount, formatter, aggregations);
         }
 
-        Bucket(long key, long docCount, List<InternalAggregation> aggregations) {
-            super(key, docCount, new InternalAggregations(aggregations));
+        @Override
+        public String getKey() {
+            return formatter != null ? formatter.format(key) : ValueFormatter.DateTime.DEFAULT.format(key);
         }
 
         @Override
         public DateTime getKeyAsDate() {
-            return new DateTime(getKey());
+            return new DateTime(key, DateTimeZone.UTC);
+        }
+
+        @Override
+        public String toString() {
+            return getKey();
         }
     }
 
-    static class Factory implements AbstractHistogramBase.Factory<DateHistogram.Bucket> {
+    static class Factory extends InternalHistogram.Factory<InternalDateHistogram.Bucket> {
 
         private Factory() {
         }
@@ -77,20 +84,24 @@ public class InternalDateHistogram extends AbstractHistogramBase<DateHistogram.B
         }
 
         @Override
-        public AbstractHistogramBase<?> create(String name, List<DateHistogram.Bucket> buckets, InternalOrder order, EmptyBucketInfo emptyBucketInfo, ValueFormatter formatter, boolean keyed) {
-            return new InternalDateHistogram(name, buckets, order, emptyBucketInfo, formatter, keyed);
+        public InternalDateHistogram create(String name, List<InternalDateHistogram.Bucket> buckets, InternalOrder order,
+                                            long minDocCount, EmptyBucketInfo emptyBucketInfo, @Nullable ValueFormatter formatter, boolean keyed) {
+            return new InternalDateHistogram(name, buckets, order, minDocCount, emptyBucketInfo, formatter, keyed);
         }
 
         @Override
-        public AbstractHistogramBase.Bucket createBucket(long key, long docCount, InternalAggregations aggregations) {
-            return new Bucket(key, docCount, aggregations);
+        public InternalDateHistogram.Bucket createBucket(long key, long docCount, InternalAggregations aggregations, @Nullable ValueFormatter formatter) {
+            return new Bucket(key, docCount, aggregations, formatter);
         }
     }
 
+    private ObjectObjectOpenHashMap<String, InternalDateHistogram.Bucket> bucketsMap;
+
     InternalDateHistogram() {} // for serialization
 
-    InternalDateHistogram(String name, List<DateHistogram.Bucket> buckets, InternalOrder order, EmptyBucketInfo emptyBucketInfo, ValueFormatter formatter, boolean keyed) {
-        super(name, buckets, order, emptyBucketInfo, formatter, keyed);
+    InternalDateHistogram(String name, List<InternalDateHistogram.Bucket> buckets, InternalOrder order, long minDocCount,
+                          EmptyBucketInfo emptyBucketInfo, @Nullable ValueFormatter formatter, boolean keyed) {
+        super(name, buckets, order, minDocCount, emptyBucketInfo, formatter, keyed);
     }
 
     @Override
@@ -99,7 +110,36 @@ public class InternalDateHistogram extends AbstractHistogramBase<DateHistogram.B
     }
 
     @Override
-    protected DateHistogram.Bucket createBucket(long key, long docCount, InternalAggregations aggregations) {
-        return new Bucket(key, docCount, aggregations);
+    public Bucket getBucketByKey(String key) {
+        try {
+            long time = Long.parseLong(key);
+            return super.getBucketByKey(time);
+        } catch (NumberFormatException nfe) {
+            // it's not a number, so lets try to parse it as a date using the formatter.
+        }
+        if (bucketsMap == null) {
+            bucketsMap = new ObjectObjectOpenHashMap<>();
+            for (InternalDateHistogram.Bucket bucket : buckets) {
+                bucketsMap.put(bucket.getKey(), bucket);
+            }
+        }
+        return bucketsMap.get(key);
     }
+
+    @Override
+    public DateHistogram.Bucket getBucketByKey(DateTime key) {
+        return getBucketByKey(key.getMillis());
+    }
+
+    @Override
+    protected InternalDateHistogram.Bucket createBucket(long key, long docCount, InternalAggregations aggregations, ValueFormatter formatter) {
+        return new Bucket(key, docCount, aggregations, formatter);
+    }
+
+    @Override
+    public void readFrom(StreamInput in) throws IOException {
+        super.readFrom(in);
+        bucketsMap = null; // we need to reset this on read (as it's lazily created on demand)
+    }
+
 }

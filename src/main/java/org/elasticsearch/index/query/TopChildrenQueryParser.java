@@ -1,13 +1,13 @@
 /*
- * Licensed to Elastic Search and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. Elastic Search licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,18 +16,22 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.index.query;
 
+import org.apache.lucene.search.Filter;
 import org.apache.lucene.search.Query;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.lucene.search.XFilteredQuery;
 import org.elasticsearch.common.xcontent.XContentParser;
+import org.elasticsearch.index.query.support.XContentStructure;
+import org.elasticsearch.index.fielddata.plain.ParentChildIndexFieldData;
 import org.elasticsearch.index.mapper.DocumentMapper;
+import org.elasticsearch.index.mapper.internal.ParentFieldMapper;
 import org.elasticsearch.index.search.child.CustomQueryWrappingFilter;
 import org.elasticsearch.index.search.child.ScoreType;
 import org.elasticsearch.index.search.child.TopChildrenQuery;
+import org.elasticsearch.index.search.nested.NonNestedDocsFilter;
 import org.elasticsearch.search.internal.SearchContext;
 
 import java.io.IOException;
@@ -52,7 +56,6 @@ public class TopChildrenQueryParser implements QueryParser {
     public Query parse(QueryParseContext parseContext) throws IOException, QueryParsingException {
         XContentParser parser = parseContext.parser();
 
-        Query innerQuery = null;
         boolean queryFound = false;
         float boost = 1.0f;
         String childType = null;
@@ -63,20 +66,18 @@ public class TopChildrenQueryParser implements QueryParser {
 
         String currentFieldName = null;
         XContentParser.Token token;
+        XContentStructure.InnerQuery iq = null;
         while ((token = parser.nextToken()) != XContentParser.Token.END_OBJECT) {
             if (token == XContentParser.Token.FIELD_NAME) {
                 currentFieldName = parser.currentName();
             } else if (token == XContentParser.Token.START_OBJECT) {
+                // Usually, the query would be parsed here, but the child
+                // type may not have been extracted yet, so use the
+                // XContentStructure.<type> facade to parse if available,
+                // or delay parsing if not.
                 if ("query".equals(currentFieldName)) {
+                    iq = new XContentStructure.InnerQuery(parseContext, childType == null ? null : new String[] {childType});
                     queryFound = true;
-                    // TODO we need to set the type, but, `query` can come before `type`... (see HasChildFilterParser)
-                    // since we switch types, make sure we change the context
-                    String[] origTypes = QueryParseContext.setTypesWithPrevious(childType == null ? null : new String[]{childType});
-                    try {
-                        innerQuery = parseContext.parseInnerQuery();
-                    } finally {
-                        QueryParseContext.setTypes(origTypes);
-                    }
                 } else {
                     throw new QueryParsingException(parseContext.index(), "[top_children] query does not support [" + currentFieldName + "]");
                 }
@@ -109,6 +110,8 @@ public class TopChildrenQueryParser implements QueryParser {
             throw new QueryParsingException(parseContext.index(), "[top_children] requires 'type' field");
         }
 
+        Query innerQuery = iq.asQuery(childType);
+
         if (innerQuery == null) {
             return null;
         }
@@ -121,15 +124,22 @@ public class TopChildrenQueryParser implements QueryParser {
         if (childDocMapper == null) {
             throw new QueryParsingException(parseContext.index(), "No mapping for for type [" + childType + "]");
         }
-        if (!childDocMapper.parentFieldMapper().active()) {
+        ParentFieldMapper parentFieldMapper = childDocMapper.parentFieldMapper();
+        if (!parentFieldMapper.active()) {
             throw new QueryParsingException(parseContext.index(), "Type [" + childType + "] does not have parent mapping");
         }
         String parentType = childDocMapper.parentFieldMapper().type();
 
+        Filter nonNestedDocsFilter = null;
+        if (childDocMapper.hasNestedObjects()) {
+            nonNestedDocsFilter = parseContext.cacheFilter(NonNestedDocsFilter.INSTANCE, null);
+        }
+
         innerQuery.setBoost(boost);
         // wrap the query with type query
         innerQuery = new XFilteredQuery(innerQuery, parseContext.cacheFilter(childDocMapper.typeFilter(), null));
-        TopChildrenQuery query = new TopChildrenQuery(innerQuery, childType, parentType, scoreType, factor, incrementalFactor, parseContext.cacheRecycler());
+        ParentChildIndexFieldData parentChildIndexFieldData = parseContext.fieldData().getForField(parentFieldMapper);
+        TopChildrenQuery query = new TopChildrenQuery(parentChildIndexFieldData, innerQuery, childType, parentType, scoreType, factor, incrementalFactor, parseContext.cacheRecycler(), nonNestedDocsFilter);
         if (queryName != null) {
             parseContext.addNamedFilter(queryName, new CustomQueryWrappingFilter(query));
         }

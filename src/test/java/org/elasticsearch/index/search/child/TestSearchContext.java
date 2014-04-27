@@ -1,34 +1,35 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements. See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations under
- * the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
-
 package org.elasticsearch.index.search.child;
 
 import org.apache.lucene.search.Filter;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.Sort;
-import org.elasticsearch.ElasticSearchException;
+import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.action.search.SearchType;
 import org.elasticsearch.cache.recycler.CacheRecycler;
-import org.elasticsearch.common.lease.Releasable;
+import org.elasticsearch.cache.recycler.PageCacheRecycler;
+import org.elasticsearch.common.util.BigArrays;
 import org.elasticsearch.index.analysis.AnalysisService;
 import org.elasticsearch.index.cache.docset.DocSetCache;
 import org.elasticsearch.index.cache.filter.FilterCache;
-import org.elasticsearch.index.cache.id.IdCache;
 import org.elasticsearch.index.fielddata.IndexFieldDataService;
 import org.elasticsearch.index.mapper.FieldMapper;
 import org.elasticsearch.index.mapper.FieldMappers;
@@ -46,6 +47,7 @@ import org.elasticsearch.search.aggregations.SearchContextAggregations;
 import org.elasticsearch.search.dfs.DfsSearchResult;
 import org.elasticsearch.search.facet.SearchContextFacets;
 import org.elasticsearch.search.fetch.FetchSearchResult;
+import org.elasticsearch.search.fetch.fielddata.FieldDataFieldsContext;
 import org.elasticsearch.search.fetch.partial.PartialFieldsContext;
 import org.elasticsearch.search.fetch.script.ScriptFieldsContext;
 import org.elasticsearch.search.fetch.source.FetchSourceContext;
@@ -61,26 +63,34 @@ import org.elasticsearch.search.suggest.SuggestionSearchContext;
 
 import java.util.List;
 
-class TestSearchContext extends SearchContext {
+public class TestSearchContext extends SearchContext {
 
     final CacheRecycler cacheRecycler;
-    final IdCache idCache;
+    final PageCacheRecycler pageCacheRecycler;
+    final BigArrays bigArrays;
     final IndexService indexService;
     final FilterCache filterCache;
+    final IndexFieldDataService indexFieldDataService;
 
     ContextIndexSearcher searcher;
     int size;
 
-    TestSearchContext(CacheRecycler cacheRecycler, IdCache idCache, IndexService indexService, FilterCache filterCache) {
+    public TestSearchContext(CacheRecycler cacheRecycler, PageCacheRecycler pageCacheRecycler, BigArrays bigArrays, IndexService indexService, FilterCache filterCache, IndexFieldDataService indexFieldDataService) {
         this.cacheRecycler = cacheRecycler;
-        this.idCache = idCache;
+        this.pageCacheRecycler = pageCacheRecycler;
+        this.bigArrays = bigArrays;
         this.indexService = indexService;
         this.filterCache = filterCache;
+        this.indexFieldDataService = indexFieldDataService;
     }
 
-    @Override
-    public boolean clearAndRelease() {
-        return false;
+    public TestSearchContext() {
+        this.cacheRecycler = null;
+        this.pageCacheRecycler = null;
+        this.bigArrays = null;
+        this.indexService = null;
+        this.filterCache = null;
+        this.indexFieldDataService = null;
     }
 
     @Override
@@ -201,12 +211,22 @@ class TestSearchContext extends SearchContext {
     }
 
     @Override
-    public RescoreSearchContext rescore() {
+    public List<RescoreSearchContext> rescore() {
         return null;
     }
 
     @Override
-    public void rescore(RescoreSearchContext rescore) {
+    public void addRescore(RescoreSearchContext rescore) {
+    }
+
+    @Override
+    public boolean hasFieldDataFields() {
+        return false;
+    }
+
+    @Override
+    public FieldDataFieldsContext fieldDataFields() {
+        return null;
     }
 
     @Override
@@ -294,6 +314,16 @@ class TestSearchContext extends SearchContext {
     }
 
     @Override
+    public PageCacheRecycler pageCacheRecycler() {
+        return pageCacheRecycler;
+    }
+
+    @Override
+    public BigArrays bigArrays() {
+        return bigArrays;
+    }
+
+    @Override
     public FilterCache filterCache() {
         return filterCache;
     }
@@ -305,12 +335,7 @@ class TestSearchContext extends SearchContext {
 
     @Override
     public IndexFieldDataService fieldData() {
-        return null;
-    }
-
-    @Override
-    public IdCache idCache() {
-        return idCache;
+        return indexFieldDataService;
     }
 
     @Override
@@ -497,6 +522,15 @@ class TestSearchContext extends SearchContext {
     }
 
     @Override
+    public void lastEmittedDoc(ScoreDoc doc) {
+    }
+
+    @Override
+    public ScoreDoc lastEmittedDoc() {
+        return null;
+    }
+
+    @Override
     public SearchLookup lookup() {
         return null;
     }
@@ -514,14 +548,6 @@ class TestSearchContext extends SearchContext {
     @Override
     public FetchSearchResult fetchResult() {
         return null;
-    }
-
-    @Override
-    public void addReleasable(Releasable releasable) {
-    }
-
-    @Override
-    public void clearReleasables() {
     }
 
     @Override
@@ -550,7 +576,17 @@ class TestSearchContext extends SearchContext {
     }
 
     @Override
-    public boolean release() throws ElasticSearchException {
+    public void doClose() throws ElasticsearchException {
+        // no-op
+    }
+
+    @Override
+    public boolean useSlowScroll() {
         return false;
+    }
+
+    @Override
+    public SearchContext useSlowScroll(boolean useSlowScroll) {
+        return null;
     }
 }

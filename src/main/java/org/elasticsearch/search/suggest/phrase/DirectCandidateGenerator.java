@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -25,7 +25,7 @@ import org.apache.lucene.search.spell.SuggestMode;
 import org.apache.lucene.search.spell.SuggestWord;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.CharsRef;
-import org.elasticsearch.ElasticSearchIllegalArgumentException;
+import org.elasticsearch.ElasticsearchIllegalArgumentException;
 import org.elasticsearch.search.suggest.SuggestUtils;
 
 import java.io.IOException;
@@ -60,7 +60,7 @@ public final class DirectCandidateGenerator extends CandidateGenerator {
 
     public DirectCandidateGenerator(DirectSpellChecker spellchecker, String field, SuggestMode suggestMode, IndexReader reader, double nonErrorLikelihood,  int numCandidates, Analyzer preFilter, Analyzer postFilter, Terms terms) throws IOException {
         if (terms == null) {
-            throw new ElasticSearchIllegalArgumentException("generator field [" + field + "] doesn't exist");
+            throw new ElasticsearchIllegalArgumentException("generator field [" + field + "] doesn't exist");
         }
         this.spellchecker = spellchecker;
         this.field = field;
@@ -117,7 +117,7 @@ public final class DirectCandidateGenerator extends CandidateGenerator {
         final long frequency = original.frequency;
         spellchecker.setThresholdFrequency(this.suggestMode == SuggestMode.SUGGEST_ALWAYS ? 0 : thresholdFrequency(frequency, dictSize));
         SuggestWord[] suggestSimilar = spellchecker.suggestSimilar(new Term(field, term), numCandidates, reader, this.suggestMode);
-        List<Candidate> candidates = new ArrayList<Candidate>(suggestSimilar.length);
+        List<Candidate> candidates = new ArrayList<>(suggestSimilar.length);
         for (int i = 0; i < suggestSimilar.length; i++) {
             SuggestWord suggestWord = suggestSimilar[i];
             BytesRef candidate = new BytesRef(suggestWord.string);
@@ -186,7 +186,7 @@ public final class DirectCandidateGenerator extends CandidateGenerator {
         }
         
         public void addCandidates(List<Candidate> candidates) {
-            final Set<Candidate> set = new HashSet<DirectCandidateGenerator.Candidate>(candidates);
+            final Set<Candidate> set = new HashSet<>(candidates);
             for (int i = 0; i < this.candidates.length; i++) {
                 set.add(this.candidates[i]);
             }

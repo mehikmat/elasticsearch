@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -20,7 +20,7 @@
 package org.elasticsearch.action.admin.cluster.snapshots.create;
 
 import org.elasticsearch.action.ActionListener;
-import org.elasticsearch.action.support.IgnoreIndices;
+import org.elasticsearch.action.support.IndicesOptions;
 import org.elasticsearch.action.support.master.MasterNodeOperationRequestBuilder;
 import org.elasticsearch.client.ClusterAdminClient;
 import org.elasticsearch.client.internal.InternalClusterAdminClient;
@@ -91,13 +91,13 @@ public class CreateSnapshotRequestBuilder extends MasterNodeOperationRequestBuil
     }
 
     /**
-     * Specifies what type of requested indices to ignore. For example indices that don't exist.
+     * Specifies the indices options. Like what type of requested indices to ignore. For example indices that don't exist.
      *
-     * @param ignoreIndices the desired behaviour regarding indices to ignore
-     * @return this builder
+     * @param indicesOptions the desired behaviour regarding indices options
+     * @return this request
      */
-    public CreateSnapshotRequestBuilder setIgnoreIndices(IgnoreIndices ignoreIndices) {
-        request.ignoreIndices(ignoreIndices);
+    public CreateSnapshotRequestBuilder setIndicesOptions(IndicesOptions indicesOptions) {
+        request.indicesOptions(indicesOptions);
         return this;
     }
 
@@ -109,6 +109,17 @@ public class CreateSnapshotRequestBuilder extends MasterNodeOperationRequestBuil
      */
     public CreateSnapshotRequestBuilder setWaitForCompletion(boolean waitForCompletion) {
         request.waitForCompletion(waitForCompletion);
+        return this;
+    }
+
+    /**
+     * If set to true the request should snapshot indices with unavailable shards
+     *
+     * @param partial true if request should snapshot indices with unavailable shards
+     * @return this builder
+     */
+    public CreateSnapshotRequestBuilder setPartial(boolean partial) {
+        request.partial(partial);
         return this;
     }
 

@@ -5,14 +5,14 @@ NOTE: In order to understand the format of suggestions, please
 read the <<search-suggesters>> page first.
 
 The `term` suggester provides a very convenient API to access word
-alternatives on token basis within a certain string distance. The API
+alternatives on a per token basis within a certain string distance. The API
 allows accessing each token in the stream individually while
 suggest-selection is left to the API consumer. Yet, often pre-selected
 suggestions are required in order to present to the end-user. The
 `phrase` suggester adds additional logic on top of the `term` suggester
 to select entire corrected phrases instead of individual tokens weighted
-based on `ngram-langugage` models. In practice it this suggester will be
-able to make better decision about which tokens to pick based on
+based on `ngram-langugage` models. In practice this suggester will be
+able to make better decisions about which tokens to pick based on
 co-occurence and frequencies.
 
 ==== API Example
@@ -36,7 +36,7 @@ curl -XPOST 'localhost:9200/_search' -d {
         "direct_generator" : [ {
           "field" : "body",
           "suggest_mode" : "always",
-          "min_word_len" : 1
+          "min_word_length" : 1
         } ],
         "highlight": {
           "pre_tag": "<em>",
@@ -48,8 +48,8 @@ curl -XPOST 'localhost:9200/_search' -d {
 }
 --------------------------------------------------
 
-The response contains suggested scored by the most likely spell
-correction first. In this case we got the expected correction
+The response contains suggestions scored by the most likely spell
+correction first. In this case we received the expected correction
 `xorr the god jewel` first while the second correction is less
 conservative where only one of the errors is corrected. Note, the
 request is executed with `max_errors` set to `0.5` so 50% of the terms
@@ -124,7 +124,10 @@ can contain misspellings (See parameter descriptions below).
     accepts a float value in the range `[0..1)` as a fraction of the actual
     query terms a number `>=1` as an absolute number of query terms. The
     default is set to `1.0` which corresponds to that only corrections with
-    at most 1 misspelled term are returned.
+    at most 1 misspelled term are returned.  Note that setting this too high
+    can negativly impact performance. Low values like `1` or `2` are recommended
+    otherwise the time spend in suggest calls might exceed the time spend in 
+    query execution.
 
 `separator`:: 
     the separator that is used to separate terms in the
@@ -226,15 +229,15 @@ The direct generators support the following parameters:
     and 2. Any other value result in an bad request error being thrown.
     Defaults to 2.
 
-`prefix_len`::
+`prefix_length`::
     The number of minimal prefix characters that must
     match in order be a candidate suggestions. Defaults to 1. Increasing
     this number improves spellcheck performance. Usually misspellings don't
-    occur in the beginning of terms.
+    occur in the beginning of terms. (Old name "prefix_len" is deprecated)
 
-`min_word_len`:: 
+`min_word_length`:: 
     The minimum length a suggest text term must have in
-    order to be included. Defaults to 4.
+    order to be included. Defaults to 4. (Old name "min_word_len" is deprecated)
 
 `max_inspections`:: 
     A factor that is used to multiply with the
@@ -295,11 +298,11 @@ curl -s -XPOST 'localhost:9200/_search' -d {
         "direct_generator" : [ {
           "field" : "body",
           "suggest_mode" : "always",
-          "min_word_len" : 1
+          "min_word_length" : 1
         }, {
           "field" : "reverse",
           "suggest_mode" : "always",
-          "min_word_len" : 1,
+          "min_word_length" : 1,
           "pre_filter" : "reverse",
           "post_filter" : "reverse"
         } ]

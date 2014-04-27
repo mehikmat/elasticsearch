@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,7 +19,7 @@
 package org.elasticsearch.snapshots;
 
 import com.google.common.collect.ImmutableList;
-import org.elasticsearch.action.support.IgnoreIndices;
+import org.elasticsearch.action.support.IndicesOptions;
 import org.elasticsearch.common.regex.Regex;
 import org.elasticsearch.index.Index;
 import org.elasticsearch.indices.IndexMissingException;
@@ -37,10 +37,10 @@ public class SnapshotUtils {
      *
      * @param availableIndices list of available indices
      * @param selectedIndices  list of selected indices
-     * @param ignoreIndices    ignore indices flag
+     * @param indicesOptions    ignore indices flag
      * @return filtered out indices
      */
-    public static ImmutableList<String> filterIndices(ImmutableList<String> availableIndices, String[] selectedIndices, IgnoreIndices ignoreIndices) {
+    public static ImmutableList<String> filterIndices(ImmutableList<String> availableIndices, String[] selectedIndices, IndicesOptions indicesOptions) {
         if (selectedIndices == null || selectedIndices.length == 0) {
             return availableIndices;
         }
@@ -60,12 +60,12 @@ public class SnapshotUtils {
                     indexOrPattern = indexOrPattern.substring(1);
                     // if its the first, add empty set
                     if (i == 0) {
-                        result = new HashSet<String>();
+                        result = new HashSet<>();
                     }
                 } else if (indexOrPattern.charAt(0) == '-') {
                     // if its the first, fill it with all the indices...
                     if (i == 0) {
-                        result = new HashSet<String>(availableIndices);
+                        result = new HashSet<>(availableIndices);
                     }
                     add = false;
                     indexOrPattern = indexOrPattern.substring(1);
@@ -73,12 +73,12 @@ public class SnapshotUtils {
             }
             if (indexOrPattern.isEmpty() || !Regex.isSimpleMatchPattern(indexOrPattern)) {
                 if (!availableIndices.contains(indexOrPattern)) {
-                    if (ignoreIndices != IgnoreIndices.MISSING) {
+                    if (!indicesOptions.ignoreUnavailable()) {
                         throw new IndexMissingException(new Index(indexOrPattern));
                     } else {
                         if (result == null) {
                             // add all the previous ones...
-                            result = new HashSet<String>();
+                            result = new HashSet<>();
                             result.addAll(availableIndices.subList(0, i));
                         }
                     }
@@ -95,7 +95,7 @@ public class SnapshotUtils {
             }
             if (result == null) {
                 // add all the previous ones...
-                result = new HashSet<String>();
+                result = new HashSet<>();
                 result.addAll(availableIndices.subList(0, i));
             }
             boolean found = false;
@@ -109,7 +109,7 @@ public class SnapshotUtils {
                     }
                 }
             }
-            if (!found && ignoreIndices != IgnoreIndices.MISSING) {
+            if (!found && !indicesOptions.allowNoIndices()) {
                 throw new IndexMissingException(new Index(indexOrPattern));
             }
         }

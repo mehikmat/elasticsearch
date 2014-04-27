@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -22,6 +22,7 @@ package org.elasticsearch.action.percolate;
 import com.carrotsearch.hppc.IntArrayList;
 import org.elasticsearch.ExceptionsHelper;
 import org.elasticsearch.action.ActionListener;
+import org.elasticsearch.action.UnavailableShardsException;
 import org.elasticsearch.action.get.*;
 import org.elasticsearch.action.support.TransportAction;
 import org.elasticsearch.action.support.broadcast.BroadcastShardOperationFailedException;
@@ -35,6 +36,7 @@ import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.util.concurrent.AtomicArray;
 import org.elasticsearch.index.engine.DocumentMissingException;
 import org.elasticsearch.index.shard.ShardId;
+import org.elasticsearch.indices.IndexMissingException;
 import org.elasticsearch.percolator.PercolatorService;
 import org.elasticsearch.threadpool.ThreadPool;
 import org.elasticsearch.transport.BaseTransportRequestHandler;
@@ -73,11 +75,11 @@ public class TransportMultiPercolateAction extends TransportAction<MultiPercolat
         final ClusterState clusterState = clusterService.state();
         clusterState.blocks().globalBlockedRaiseException(ClusterBlockLevel.READ);
 
-        final List<Object> percolateRequests = new ArrayList<Object>(request.requests().size());
+        final List<Object> percolateRequests = new ArrayList<>(request.requests().size());
         // Can have a mixture of percolate requests. (normal percolate requests & percolate existing doc),
         // so we need to keep track for what percolate request we had a get request
         final IntArrayList getRequestSlots = new IntArrayList();
-        List<GetRequest> existingDocsRequests = new ArrayList<GetRequest>();
+        List<GetRequest> existingDocsRequests = new ArrayList<>();
         for (int slot = 0;  slot < request.requests().size(); slot++) {
             PercolateRequest percolateRequest = request.requests().get(slot);
             percolateRequest.startTime = System.currentTimeMillis();
@@ -148,26 +150,40 @@ public class TransportMultiPercolateAction extends TransportAction<MultiPercolat
         ASyncAction(List<Object> percolateRequests, ActionListener<MultiPercolateResponse> finalListener, ClusterState clusterState) {
             this.finalListener = finalListener;
             this.percolateRequests = percolateRequests;
-            responsesByItemAndShard = new AtomicReferenceArray<AtomicReferenceArray>(percolateRequests.size());
-            expectedOperationsPerItem = new AtomicReferenceArray<AtomicInteger>(percolateRequests.size());
-            reducedResponses = new AtomicArray<Object>(percolateRequests.size());
+            responsesByItemAndShard = new AtomicReferenceArray<>(percolateRequests.size());
+            expectedOperationsPerItem = new AtomicReferenceArray<>(percolateRequests.size());
+            reducedResponses = new AtomicArray<>(percolateRequests.size());
 
             // Resolving concrete indices and routing and grouping the requests by shard
-            requestsByShard = new HashMap<ShardId, TransportShardMultiPercolateAction.Request>();
+            requestsByShard = new HashMap<>();
             // Keep track what slots belong to what shard, in case a request to a shard fails on all copies
-            shardToSlots = new HashMap<ShardId, IntArrayList>();
+            shardToSlots = new HashMap<>();
             int expectedResults = 0;
             for (int slot = 0;  slot < percolateRequests.size(); slot++) {
                 Object element = percolateRequests.get(slot);
                 assert element != null;
                 if (element instanceof PercolateRequest) {
                     PercolateRequest percolateRequest = (PercolateRequest) element;
-                    String[] concreteIndices = clusterState.metaData().concreteIndices(percolateRequest.indices(), percolateRequest.ignoreIndices(), true);
+                    String[] concreteIndices;
+                    try {
+                         concreteIndices = clusterState.metaData().concreteIndices(percolateRequest.indices(), percolateRequest.indicesOptions());
+                    } catch (IndexMissingException e) {
+                        reducedResponses.set(slot, e);
+                        responsesByItemAndShard.set(slot, new AtomicReferenceArray(0));
+                        expectedOperationsPerItem.set(slot, new AtomicInteger(0));
+                        continue;
+                    }
                     Map<String, Set<String>> routing = clusterState.metaData().resolveSearchRouting(percolateRequest.routing(), percolateRequest.indices());
                     // TODO: I only need shardIds, ShardIterator(ShardRouting) is only needed in TransportShardMultiPercolateAction
                     GroupShardsIterator shards = clusterService.operationRouting().searchShards(
-                            clusterState, percolateRequest.indices(), concreteIndices, routing, null
+                            clusterState, percolateRequest.indices(), concreteIndices, routing, percolateRequest.preference()
                     );
+                    if (shards.size() == 0) {
+                        reducedResponses.set(slot, new UnavailableShardsException(null, "No shards available"));
+                        responsesByItemAndShard.set(slot, new AtomicReferenceArray(0));
+                        expectedOperationsPerItem.set(slot, new AtomicInteger(0));
+                        continue;
+                    }
 
                     responsesByItemAndShard.set(slot, new AtomicReferenceArray(shards.size()));
                     expectedOperationsPerItem.set(slot, new AtomicInteger(shards.size()));

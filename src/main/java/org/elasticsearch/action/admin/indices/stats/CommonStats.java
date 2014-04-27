@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -40,6 +40,8 @@ import org.elasticsearch.index.search.stats.SearchStats;
 import org.elasticsearch.index.shard.DocsStats;
 import org.elasticsearch.index.shard.service.IndexShard;
 import org.elasticsearch.index.store.StoreStats;
+import org.elasticsearch.index.suggest.stats.SuggestStats;
+import org.elasticsearch.index.translog.TranslogStats;
 import org.elasticsearch.index.warmer.WarmerStats;
 import org.elasticsearch.search.suggest.completion.CompletionStats;
 
@@ -103,6 +105,12 @@ public class CommonStats implements Streamable, ToXContent {
                 case Percolate:
                     percolate = new PercolateStats();
                     break;
+                case Translog:
+                    translog = new TranslogStats();
+                    break;
+                case Suggest:
+                    suggest = new SuggestStats();
+                    break;
                 default:
                     throw new IllegalStateException("Unknown Flag: " + flag);
             }
@@ -160,6 +168,12 @@ public class CommonStats implements Streamable, ToXContent {
                 case Percolate:
                     percolate = indexShard.shardPercolateService().stats();
                     break;
+                case Translog:
+                    translog = indexShard.translogStats();
+                    break;
+                case Suggest:
+                    suggest = indexShard.suggestStats();
+                    break;
                 default:
                     throw new IllegalStateException("Unknown Flag: " + flag);
             }
@@ -210,6 +224,12 @@ public class CommonStats implements Streamable, ToXContent {
 
     @Nullable
     public SegmentsStats segments;
+
+    @Nullable
+    public TranslogStats translog;
+
+    @Nullable
+    public SuggestStats suggest;
 
     public void add(CommonStats stats) {
         if (docs == null) {
@@ -334,6 +354,22 @@ public class CommonStats implements Streamable, ToXContent {
         } else {
             segments.add(stats.getSegments());
         }
+        if (translog == null) {
+            if (stats.getTranslog() != null) {
+                translog = new TranslogStats();
+                translog.add(stats.getTranslog());
+            }
+        } else {
+            translog.add(stats.getTranslog());
+        }
+        if (suggest == null) {
+            if (stats.getSuggest() != null) {
+                suggest = new SuggestStats();
+                suggest.add(stats.getSuggest());
+            }
+        } else {
+            suggest.add(stats.getSuggest());
+        }
     }
 
     @Nullable
@@ -411,6 +447,16 @@ public class CommonStats implements Streamable, ToXContent {
         return segments;
     }
 
+    @Nullable
+    public TranslogStats getTranslog() {
+        return translog;
+    }
+
+    @Nullable
+    public SuggestStats getSuggest() {
+        return suggest;
+    }
+
     public static CommonStats readCommonStats(StreamInput in) throws IOException {
         CommonStats stats = new CommonStats();
         stats.readFrom(in);
@@ -458,15 +504,15 @@ public class CommonStats implements Streamable, ToXContent {
         if (in.readBoolean()) {
             percolate = PercolateStats.readPercolateStats(in);
         }
-        if (in.getVersion().onOrAfter(Version.V_0_90_4)) {
-            if (in.readBoolean()) {
-                completion = CompletionStats.readCompletionStats(in);
-            }
+        if (in.readBoolean()) {
+            completion = CompletionStats.readCompletionStats(in);
         }
-        if (in.getVersion().after(Version.V_0_90_6)) {
-            if (in.readBoolean()) {
-                segments = SegmentsStats.readSegmentsStats(in);
-            }
+        if (in.readBoolean()) {
+            segments = SegmentsStats.readSegmentsStats(in);
+        }
+        translog = in.readOptionalStreamable(new TranslogStats());
+        if (in.getVersion().onOrAfter(Version.V_1_2_0)) {
+            suggest = in.readOptionalStreamable(new SuggestStats());
         }
     }
 
@@ -550,21 +596,21 @@ public class CommonStats implements Streamable, ToXContent {
             out.writeBoolean(true);
             percolate.writeTo(out);
         }
-        if (out.getVersion().onOrAfter(Version.V_0_90_4)) {
-            if (completion == null) {
-                out.writeBoolean(false);
-            } else {
-                out.writeBoolean(true);
-                completion.writeTo(out);
-            }
+        if (completion == null) {
+            out.writeBoolean(false);
+        } else {
+            out.writeBoolean(true);
+            completion.writeTo(out);
         }
-        if (out.getVersion().after(Version.V_0_90_6)) {
-            if (segments == null) {
-                out.writeBoolean(false);
-            } else {
-                out.writeBoolean(true);
-                segments.writeTo(out);
-            }
+        if (segments == null) {
+            out.writeBoolean(false);
+        } else {
+            out.writeBoolean(true);
+            segments.writeTo(out);
+        }
+        out.writeOptionalStreamable(translog);
+        if (out.getVersion().onOrAfter(Version.V_1_2_0)) {
+            out.writeOptionalStreamable(suggest);
         }
     }
 
@@ -615,6 +661,12 @@ public class CommonStats implements Streamable, ToXContent {
         }
         if (segments != null) {
             segments.toXContent(builder, params);
+        }
+        if (translog != null) {
+            translog.toXContent(builder, params);
+        }
+        if (suggest != null) {
+            suggest.toXContent(builder, params);
         }
         return builder;
     }

@@ -1,13 +1,13 @@
 /*
- * Licensed to Elastic Search and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. Elastic Search licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,10 +16,9 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.action.percolate;
 
-import org.elasticsearch.ElasticSearchException;
+import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.ShardOperationFailedException;
 import org.elasticsearch.action.get.GetResponse;
@@ -156,7 +155,8 @@ public class TransportPercolateAction extends TransportBroadcastOperationAction<
 
         if (shardResults == null) {
             long tookInMillis = System.currentTimeMillis() - request.startTime;
-            return new PercolateResponse(shardsResponses.length(), successfulShards, failedShards, shardFailures, tookInMillis);
+            PercolateResponse.Match[] matches = request.onlyCount() ? null : PercolateResponse.EMPTY;
+            return new PercolateResponse(shardsResponses.length(), successfulShards, failedShards, shardFailures, tookInMillis, matches);
         } else {
             PercolatorService.ReduceResult result = percolatorService.reduce(percolatorTypeId, shardResults);
             long tookInMillis = System.currentTimeMillis() - request.startTime;
@@ -189,7 +189,7 @@ public class TransportPercolateAction extends TransportBroadcastOperationAction<
     }
 
     @Override
-    protected PercolateShardResponse shardOperation(PercolateShardRequest request) throws ElasticSearchException {
+    protected PercolateShardResponse shardOperation(PercolateShardRequest request) throws ElasticsearchException {
         try {
             return percolatorService.percolate(request);
         } catch (Throwable e) {

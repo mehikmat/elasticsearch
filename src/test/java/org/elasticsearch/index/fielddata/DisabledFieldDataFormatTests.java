@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -25,9 +25,15 @@ import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.search.aggregations.AggregationBuilders;
 import org.elasticsearch.test.ElasticsearchIntegrationTest;
 
+import static org.elasticsearch.test.hamcrest.ElasticsearchAssertions.assertFailures;
 import static org.elasticsearch.test.hamcrest.ElasticsearchAssertions.assertNoFailures;
 
 public class DisabledFieldDataFormatTests extends ElasticsearchIntegrationTest {
+
+    @Override
+    protected int numberOfReplicas() {
+        return 0;
+    }
 
     public void test() throws Exception {
         createIndex("test");
@@ -45,7 +51,7 @@ public class DisabledFieldDataFormatTests extends ElasticsearchIntegrationTest {
         // try to run something that relies on field data and make sure that it fails
         try {
             resp = client().prepareSearch("test").addAggregation(AggregationBuilders.terms("t").field("s")).execute().actionGet();
-            assertTrue(resp.toString(), resp.getFailedShards() > 0);
+            assertFailures(resp);
         } catch (SearchPhaseExecutionException e) {
             // expected
         }
@@ -69,7 +75,7 @@ public class DisabledFieldDataFormatTests extends ElasticsearchIntegrationTest {
         refresh();
         try {
             resp = client().prepareSearch("test").addAggregation(AggregationBuilders.terms("t").field("s")).execute().actionGet();
-            assertTrue(resp.toString(), resp.getFailedShards() > 0);
+            assertFailures(resp);
         } catch (SearchPhaseExecutionException e) {
             // expected
         }

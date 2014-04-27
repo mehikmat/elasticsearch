@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -29,8 +29,7 @@ import java.io.IOException;
 /**
  * A request to get indices level stats. Allow to enable different stats to be returned.
  * <p/>
- * <p>By default, the {@link #docs(boolean)}, {@link #store(boolean)}, {@link #indexing(boolean)}
- * are enabled. Other stats can be enabled as well.
+ * <p>By default, all statistics are enabled.
  * <p/>
  * <p>All the stats to be returned can be cleared using {@link #clear()}, at which point, specific
  * stats can be enabled.
@@ -237,6 +236,24 @@ public class IndicesStatsRequest extends BroadcastOperationRequest<IndicesStatsR
 
     public String[] completionFields() {
         return flags.completionDataFields();
+    }
+
+    public IndicesStatsRequest translog(boolean translog) {
+        flags.set(Flag.Translog, translog);
+        return this;
+    }
+
+    public boolean translog() {
+        return flags.isSet(Flag.Translog);
+    }
+
+    public IndicesStatsRequest suggest(boolean suggest) {
+        flags.set(Flag.Suggest, suggest);
+        return this;
+    }
+
+    public boolean suggest() {
+        return flags.isSet(Flag.Suggest);
     }
 
     @Override

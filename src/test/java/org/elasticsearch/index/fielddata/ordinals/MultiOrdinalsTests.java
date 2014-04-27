@@ -1,25 +1,23 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
- *  Unless required by applicable law or agreed to in writing,
- *  software distributed under the License is distributed on an
- *  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- *  KIND, either express or implied.  See the License for the
- *  specific language governing permissions and limitations
- *  under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
-
 package org.elasticsearch.index.fielddata.ordinals;
 
-import org.apache.lucene.util.LongsRef;
 import org.apache.lucene.util.packed.PackedInts;
 import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.test.ElasticsearchTestCase;
@@ -51,11 +49,11 @@ public class MultiOrdinalsTests extends ElasticsearchTestCase {
         int numOrdinals = 1 + random.nextInt(200);
         int numValues = 100 + random.nextInt(100000);
         OrdinalsBuilder builder = new OrdinalsBuilder(numDocs);
-        Set<OrdAndId> ordsAndIdSet = new HashSet<OrdAndId>();
+        Set<OrdAndId> ordsAndIdSet = new HashSet<>();
         for (int i = 0; i < numValues; i++) {
             ordsAndIdSet.add(new OrdAndId(1 + random.nextInt(numOrdinals), random.nextInt(numDocs)));
         }
-        List<OrdAndId> ordsAndIds = new ArrayList<OrdAndId>(ordsAndIdSet);
+        List<OrdAndId> ordsAndIds = new ArrayList<>(ordsAndIdSet);
         Collections.sort(ordsAndIds, new Comparator<OrdAndId>() {
 
             @Override
@@ -107,18 +105,18 @@ public class MultiOrdinalsTests extends ElasticsearchTestCase {
         Ordinals ords = creationMultiOrdinals(builder);
         Ordinals.Docs docs = ords.ordinals();
         int docId = ordsAndIds.get(0).id;
-        List<Long> docOrds = new ArrayList<Long>();
+        List<Long> docOrds = new ArrayList<>();
         for (OrdAndId ordAndId : ordsAndIds) {
             if (docId == ordAndId.id) {
                 docOrds.add(ordAndId.ord);
             } else {
                 if (!docOrds.isEmpty()) {
                     assertThat(docs.getOrd(docId), equalTo(docOrds.get(0)));
-                    LongsRef ref = docs.getOrds(docId);
-                    assertThat(ref.offset, equalTo(0));
 
-                    for (int i = ref.offset; i < ref.length; i++) {
-                        assertThat("index: " + i + " offset: " + ref.offset + " len: " + ref.length, ref.longs[i], equalTo(docOrds.get(i)));
+                    final int numOrds = docs.setDocument(docId);
+                    assertThat(numOrds, equalTo(docOrds.size()));
+                    for (int i = 0; i < numOrds; i++) {
+                        assertThat(docs.nextOrd(), equalTo(docOrds.get(i)));
                     }
                     final long[] array = new long[docOrds.size()];
                     for (int i = 0; i < array.length; i++) {
@@ -274,16 +272,15 @@ public class MultiOrdinalsTests extends ElasticsearchTestCase {
                 numOrds = Math.max(numOrds, ordinalPlan[doc][ordinalPlan[doc].length - 1]);
             }
         }
-        assertThat(docs.getNumDocs(), equalTo(ordinalPlan.length));
-        assertThat(docs.getNumOrds(), equalTo(numOrds)); // Includes null ord
+        assertThat(docs.getMaxOrd(), equalTo(numOrds + Ordinals.MIN_ORDINAL)); // Includes null ord
         assertThat(docs.getMaxOrd(), equalTo(numOrds + 1));
         assertThat(docs.isMultiValued(), equalTo(true));
         for (int doc = 0; doc < ordinalPlan.length; ++doc) {
-            LongsRef ref = docs.getOrds(doc);
-            assertThat(ref.offset, equalTo(0));
             long[] ords = ordinalPlan[doc];
-            assertThat(ref, equalTo(new LongsRef(ords, 0, ords.length)));
-            assertIter(docs, doc, ords);
+            assertThat(docs.setDocument(doc), equalTo(ords.length));
+            for (int i = 0; i < ords.length; ++i) {
+                assertThat(docs.nextOrd(), equalTo(ords[i]));
+            }
         }
     }
 

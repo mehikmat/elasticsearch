@@ -1,12 +1,11 @@
-package org.elasticsearch.action.termvector;
 /*
- * Licensed to ElasticSearch under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -18,23 +17,22 @@ package org.elasticsearch.action.termvector;
  * under the License.
  */
 
+package org.elasticsearch.action.termvector;
 
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.Fields;
-import org.elasticsearch.action.termvector.MultiTermVectorsItemResponse;
-import org.elasticsearch.action.termvector.MultiTermVectorsRequestBuilder;
-import org.elasticsearch.action.termvector.MultiTermVectorsResponse;
-import org.elasticsearch.action.termvector.TermVectorRequestBuilder;
 import org.junit.Test;
 
 import static org.hamcrest.Matchers.equalTo;
+
 public class MultiTermVectorsTests extends AbstractTermVectorTests {
 
     @Test
     public void testDuelESLucene() throws Exception {
         AbstractTermVectorTests.TestFieldSetting[] testFieldSettings = getFieldSettings();
-        createIndexBasedOnFieldSettings(testFieldSettings, -1);
-        AbstractTermVectorTests.TestDoc[] testDocs = generateTestDocs(5, testFieldSettings);
+        createIndexBasedOnFieldSettings("test", testFieldSettings);
+        //we generate as many docs as many shards we have
+        TestDoc[] testDocs = generateTestDocs(getNumShards("test").numPrimaries, testFieldSettings);
 
         DirectoryReader directoryReader = indexDocsWithLucene(testDocs);
         AbstractTermVectorTests.TestConfig[] testConfigs = generateTestConfigs(20, testDocs, testFieldSettings);
@@ -64,6 +62,8 @@ public class MultiTermVectorsTests extends AbstractTermVectorTests {
         }
 
     }
+
+    @Test
     public void testMissingIndexThrowsMissingIndex() throws Exception {
         TermVectorRequestBuilder requestBuilder = client().prepareTermVector("testX", "typeX", Integer.toString(1));
         MultiTermVectorsRequestBuilder mtvBuilder = new MultiTermVectorsRequestBuilder(client());

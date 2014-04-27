@@ -39,7 +39,7 @@ $ cat requests
 { "index" : { "_index" : "test", "_type" : "type1", "_id" : "1" } }
 { "field1" : "value1" }
 $ curl -s -XPOST localhost:9200/_bulk --data-binary @requests; echo
-{"took":7,"items":[{"create":{"_index":"test","_type":"type1","_id":"1","_version":1,"ok":true}}]}
+{"took":7,"items":[{"create":{"_index":"test","_type":"type1","_id":"1","_version":1}}]}
 --------------------------------------------------
 
 Because this format uses literal `\n`'s as delimiters, please be sure
@@ -91,8 +91,7 @@ chunks, as this will slow things down.
 Each bulk item can include the version value using the
 `_version`/`version` field. It automatically follows the behavior of the
 index / delete operation based on the `_version` mapping. It also
-support the `version_type`/`_version_type` when using `external`
-versioning.
+support the `version_type`/`_version_type` (see <<index-versioning, versioning>>)
 
 [float]
 [[bulk-routing]]

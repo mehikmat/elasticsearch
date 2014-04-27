@@ -1,30 +1,28 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements. See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations under
- * the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
-
 package org.elasticsearch.test.rest.spec;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpPut;
-import org.apache.lucene.util.PriorityQueue;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -36,29 +34,19 @@ import java.util.regex.Pattern;
  */
 public class RestApi {
 
-    private static final String ALL = "_all";
-
     private final String name;
     private List<String> methods = Lists.newArrayList();
     private List<String> paths = Lists.newArrayList();
     private List<String> pathParts = Lists.newArrayList();
+    private List<String> params = Lists.newArrayList();
+    private BODY body = BODY.NOT_SUPPORTED;
+
+    public static enum BODY {
+        NOT_SUPPORTED, OPTIONAL, REQUIRED
+    }
 
     RestApi(String name) {
         this.name = name;
-    }
-
-    RestApi(RestApi restApi, String name, String... methods) {
-        this.name = name;
-        this.methods = Arrays.asList(methods);
-        paths.addAll(restApi.getPaths());
-        pathParts.addAll(restApi.getPathParts());
-    }
-
-    RestApi(RestApi restApi, List<String> paths) {
-        this.name = restApi.getName();
-        this.methods = restApi.getMethods();
-        this.paths.addAll(paths);
-        pathParts.addAll(restApi.getPathParts());
     }
 
     public String getName() {
@@ -115,64 +103,78 @@ public class RestApi {
         this.pathParts.add(pathPart);
     }
 
+    public List<String> getParams() {
+        return params;
+    }
+
+    void addParam(String param) {
+        this.params.add(param);
+    }
+
+    void setBodyOptional() {
+        this.body = BODY.OPTIONAL;
+    }
+
+    void setBodyRequired() {
+        this.body = BODY.REQUIRED;
+    }
+
+    public boolean isBodySupported() {
+        return body != BODY.NOT_SUPPORTED;
+    }
+
+    public boolean isBodyRequired() {
+        return body == BODY.REQUIRED;
+    }
+
     /**
      * Finds the best matching rest path given the current parameters and replaces
      * placeholders with their corresponding values received as arguments
      */
-    public String getFinalPath(Map<String, String> pathParams) {
-        RestPath matchingRestPath = findMatchingRestPath(pathParams.keySet());
-        String path = matchingRestPath.path;
-        for (Map.Entry<String, String> paramEntry : matchingRestPath.params.entrySet()) {
-            //replace path placeholders with actual values
-            String value = pathParams.get(paramEntry.getValue());
-            if (value == null) {
-                //there might be additional placeholder to replace, not available as input params
-                //it can only be {index} or {type} to be replaced with _all
-                if (paramEntry.getValue().equals("index") || paramEntry.getValue().equals("type")) {
-                    value = ALL;
-                } else {
-                    throw new IllegalArgumentException("path [" + path + "] contains placeholders that weren't replaced with proper values");
-                }
-            }
-            path = path.replace(paramEntry.getKey(), value);
+    public String[] getFinalPaths(Map<String, String> pathParams) {
+
+        List<RestPath> matchingRestPaths = findMatchingRestPaths(pathParams.keySet());
+        if (matchingRestPaths == null || matchingRestPaths.isEmpty()) {
+            throw new IllegalArgumentException("unable to find matching rest path for api [" + name + "] and path params " + pathParams);
         }
-        return path;
+
+        String[] paths = new String[matchingRestPaths.size()];
+        for (int i = 0; i < matchingRestPaths.size(); i++) {
+            RestPath restPath = matchingRestPaths.get(i);
+            String path = restPath.path;
+            for (Map.Entry<String, String> paramEntry : restPath.parts.entrySet()) {
+                // replace path placeholders with actual values
+                String value = pathParams.get(paramEntry.getValue());
+                if (value == null) {
+                    throw new IllegalArgumentException("parameter [" + paramEntry.getValue() + "] missing");
+                }
+                path = path.replace(paramEntry.getKey(), value);
+            }
+            paths[i] = path;
+        }
+        return paths;
     }
 
     /**
-     * Finds the best matching rest path out of the available ones with the current api (based on REST spec).
+     * Finds the matching rest paths out of the available ones with the current api (based on REST spec).
      *
      * The best path is the one that has exactly the same number of placeholders to replace
-     * (e.g. /{index}/{type}/{id} when the params are exactly index, type and id).
-     * Otherwise there might be additional placeholders, thus we use the path with the least additional placeholders.
-     * (e.g. get with only index and id as parameters, the closest (and only) path contains {type} too, which becomes _all)
+     * (e.g. /{index}/{type}/{id} when the path params are exactly index, type and id).
      */
-    private RestPath findMatchingRestPath(Set<String> restParams) {
+    private List<RestPath> findMatchingRestPaths(Set<String> restParams) {
 
+        List<RestPath> matchingRestPaths = Lists.newArrayList();
         RestPath[] restPaths = buildRestPaths();
 
-        //We need to find the path that has exactly the placeholders corresponding to our params
-        //If there's no exact match we fallback to the closest one (with as less additional placeholders as possible)
-        //The fallback is needed for:
-        //1) get, get_source and exists with only index and id => /{index}/_all/{id} (
-        //2) search with only type => /_all/{type/_search
-        PriorityQueue<RestPath> restPathQueue = new PriorityQueue<RestPath>(1) {
-            @Override
-            protected boolean lessThan(RestPath a, RestPath b) {
-                return a.params.size() >= b.params.size();
-            }
-        };
         for (RestPath restPath : restPaths) {
-            if (restPath.params.values().containsAll(restParams)) {
-                restPathQueue.insertWithOverflow(restPath);
+            if (restPath.parts.size() == restParams.size()) {
+                if (restPath.parts.values().containsAll(restParams)) {
+                    matchingRestPaths.add(restPath);
+                }
             }
         }
 
-        if (restPathQueue.size() > 0) {
-            return restPathQueue.top();
-        }
-
-        throw new IllegalArgumentException("unable to find best path for api [" + name + "] and params " + restParams);
+        return matchingRestPaths;
     }
 
     private RestPath[] buildRestPaths() {
@@ -188,15 +190,15 @@ public class RestApi {
 
         final String path;
         //contains param to replace (e.g. {index}) and param key to use for lookup in the current values map (e.g. index)
-        final Map<String, String> params;
+        final Map<String, String> parts;
 
         RestPath(String path) {
             this.path = path;
-            this.params = extractParams(path);
+            this.parts = extractParts(path);
         }
 
-        private static Map<String,String> extractParams(String input) {
-            Map<String, String> params = Maps.newHashMap();
+        private static Map<String,String> extractParts(String input) {
+            Map<String, String> parts = Maps.newHashMap();
             Matcher matcher = PLACEHOLDERS_PATTERN.matcher(input);
             while (matcher.find()) {
                 //key is e.g. {index}
@@ -206,9 +208,9 @@ public class RestApi {
                 }
                 //to be replaced with current value found with key e.g. index
                 String value = matcher.group(2);
-                params.put(key, value);
+                parts.put(key, value);
             }
-            return params;
+            return parts;
         }
     }
 }

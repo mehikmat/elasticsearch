@@ -1,12 +1,11 @@
-package org.elasticsearch.action.admin.cluster.stats;
 /*
- * Licensed to ElasticSearch under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -18,6 +17,7 @@ package org.elasticsearch.action.admin.cluster.stats;
  * under the License.
  */
 
+package org.elasticsearch.action.admin.cluster.stats;
 
 import com.carrotsearch.hppc.ObjectIntOpenHashMap;
 import com.carrotsearch.hppc.cursors.ObjectIntCursor;
@@ -60,14 +60,14 @@ public class ClusterStatsNodes implements ToXContent, Streamable {
 
     public ClusterStatsNodes(ClusterStatsNodeResponse[] nodeResponses) {
         this.counts = new Counts();
-        this.versions = new HashSet<Version>();
+        this.versions = new HashSet<>();
         this.os = new OsStats();
         this.jvm = new JvmStats();
         this.fs = new FsStats.Info();
-        this.plugins = new HashSet<PluginInfo>();
+        this.plugins = new HashSet<>();
         this.process = new ProcessStats();
 
-        Set<InetAddress> seenAddresses = new HashSet<InetAddress>(nodeResponses.length);
+        Set<InetAddress> seenAddresses = new HashSet<>(nodeResponses.length);
 
         for (ClusterStatsNodeResponse nodeResponse : nodeResponses) {
 
@@ -130,7 +130,7 @@ public class ClusterStatsNodes implements ToXContent, Streamable {
         counts = Counts.readCounts(in);
 
         int size = in.readVInt();
-        versions = new HashSet<Version>(size);
+        versions = new HashSet<>(size);
         for (; size > 0; size--) {
             versions.add(Version.readVersion(in));
         }
@@ -141,7 +141,7 @@ public class ClusterStatsNodes implements ToXContent, Streamable {
         fs = FsStats.Info.readInfoFrom(in);
 
         size = in.readVInt();
-        plugins = new HashSet<PluginInfo>(size);
+        plugins = new HashSet<>(size);
         for (; size > 0; size--) {
             plugins.add(PluginInfo.readPluginInfo(in));
         }
@@ -306,7 +306,7 @@ public class ClusterStatsNodes implements ToXContent, Streamable {
         ObjectIntOpenHashMap<OsInfo.Cpu> cpus;
 
         public OsStats() {
-            cpus = new ObjectIntOpenHashMap<org.elasticsearch.monitor.os.OsInfo.Cpu>();
+            cpus = new ObjectIntOpenHashMap<>();
         }
 
         public void addNodeInfo(NodeInfo nodeInfo) {
@@ -339,7 +339,7 @@ public class ClusterStatsNodes implements ToXContent, Streamable {
             availableProcessors = in.readVInt();
             availableMemory = in.readLong();
             int size = in.readVInt();
-            cpus = new ObjectIntOpenHashMap<OsInfo.Cpu>(size);
+            cpus = new ObjectIntOpenHashMap<>(size);
             for (; size > 0; size--) {
                 cpus.addTo(OsInfo.Cpu.readCpu(in), in.readVInt());
             }
@@ -397,6 +397,8 @@ public class ClusterStatsNodes implements ToXContent, Streamable {
         int count;
         int cpuPercent;
         long totalOpenFileDescriptors;
+        long minOpenFileDescriptors = Long.MAX_VALUE;
+        long maxOpenFileDescriptors = Long.MIN_VALUE;
 
         public void addNodeStats(NodeStats nodeStats) {
             if (nodeStats.getProcess() == null) {
@@ -407,7 +409,14 @@ public class ClusterStatsNodes implements ToXContent, Streamable {
                 // with no sigar, this may not be available
                 cpuPercent += nodeStats.getProcess().cpu().getPercent();
             }
-            totalOpenFileDescriptors += nodeStats.getProcess().openFileDescriptors();
+            long fd = nodeStats.getProcess().openFileDescriptors();
+            if (fd > 0) {
+                // fd can be -1 if not supported on platform
+                totalOpenFileDescriptors += fd;
+            }
+            // we still do min max calc on -1, so we'll have an indication of it not being supported on one of the nodes.
+            minOpenFileDescriptors = Math.min(minOpenFileDescriptors, fd);
+            maxOpenFileDescriptors = Math.max(maxOpenFileDescriptors, fd);
         }
 
         /**
@@ -424,11 +433,27 @@ public class ClusterStatsNodes implements ToXContent, Streamable {
             return totalOpenFileDescriptors / count;
         }
 
+        public long getMaxOpenFileDescriptors() {
+            if (count == 0) {
+                return -1;
+            }
+            return maxOpenFileDescriptors;
+        }
+
+        public long getMinOpenFileDescriptors() {
+            if (count == 0) {
+                return -1;
+            }
+            return minOpenFileDescriptors;
+        }
+
         @Override
         public void readFrom(StreamInput in) throws IOException {
             count = in.readVInt();
             cpuPercent = in.readVInt();
             totalOpenFileDescriptors = in.readVLong();
+            minOpenFileDescriptors = in.readLong();
+            maxOpenFileDescriptors = in.readLong();
         }
 
         @Override
@@ -436,6 +461,8 @@ public class ClusterStatsNodes implements ToXContent, Streamable {
             out.writeVInt(count);
             out.writeVInt(cpuPercent);
             out.writeVLong(totalOpenFileDescriptors);
+            out.writeLong(minOpenFileDescriptors);
+            out.writeLong(maxOpenFileDescriptors);
         }
 
         public static ProcessStats readStats(StreamInput in) throws IOException {
@@ -447,13 +474,22 @@ public class ClusterStatsNodes implements ToXContent, Streamable {
         static final class Fields {
             static final XContentBuilderString CPU = new XContentBuilderString("cpu");
             static final XContentBuilderString PERCENT = new XContentBuilderString("percent");
-            static final XContentBuilderString AVG_OPEN_FD = new XContentBuilderString("avg_open_file_descriptors");
+            static final XContentBuilderString OPEN_FILE_DESCRIPTORS = new XContentBuilderString("open_file_descriptors");
+            static final XContentBuilderString MIN = new XContentBuilderString("min");
+            static final XContentBuilderString MAX = new XContentBuilderString("max");
+            static final XContentBuilderString AVG = new XContentBuilderString("avg");
         }
 
         @Override
         public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
             builder.startObject(Fields.CPU).field(Fields.PERCENT, cpuPercent).endObject();
-            builder.field(Fields.AVG_OPEN_FD, getAvgOpenFileDescriptors());
+            if (count > 0) {
+                builder.startObject(Fields.OPEN_FILE_DESCRIPTORS);
+                builder.field(Fields.MIN, getMinOpenFileDescriptors());
+                builder.field(Fields.MAX, getMaxOpenFileDescriptors());
+                builder.field(Fields.AVG, getAvgOpenFileDescriptors());
+                builder.endObject();
+            }
             return builder;
         }
     }
@@ -467,7 +503,7 @@ public class ClusterStatsNodes implements ToXContent, Streamable {
         long heapMax;
 
         JvmStats() {
-            versions = new ObjectIntOpenHashMap<JvmVersion>();
+            versions = new ObjectIntOpenHashMap<>();
             threads = 0;
             maxUptime = 0;
             heapMax = 0;
@@ -525,7 +561,7 @@ public class ClusterStatsNodes implements ToXContent, Streamable {
         @Override
         public void readFrom(StreamInput in) throws IOException {
             int size = in.readVInt();
-            versions = new ObjectIntOpenHashMap<JvmVersion>(size);
+            versions = new ObjectIntOpenHashMap<>(size);
             for (; size > 0; size--) {
                 versions.addTo(JvmVersion.readJvmVersion(in), in.readVInt());
             }

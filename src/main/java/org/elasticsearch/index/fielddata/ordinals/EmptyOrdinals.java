@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -20,17 +20,12 @@
 package org.elasticsearch.index.fielddata.ordinals;
 
 import org.apache.lucene.util.LongsRef;
-import org.elasticsearch.ElasticSearchIllegalStateException;
+import org.elasticsearch.ElasticsearchIllegalStateException;
 
 /**
  */
-public class EmptyOrdinals implements Ordinals {
-
-    private final int numDocs;
-
-    public EmptyOrdinals(int numDocs) {
-        this.numDocs = numDocs;
-    }
+public enum EmptyOrdinals implements Ordinals {
+    INSTANCE;
 
     @Override
     public long getMemorySizeInBytes() {
@@ -43,16 +38,6 @@ public class EmptyOrdinals implements Ordinals {
     }
 
     @Override
-    public int getNumDocs() {
-        return this.numDocs;
-    }
-
-    @Override
-    public long getNumOrds() {
-        return 0;
-    }
-
-    @Override
     public long getMaxOrd() {
         return 1;
     }
@@ -62,37 +47,11 @@ public class EmptyOrdinals implements Ordinals {
         return new Docs(this);
     }
 
-    public static class Docs implements Ordinals.Docs {
-        private final EmptyOrdinals parent;
+    public static class Docs extends Ordinals.AbstractDocs {
         public static final LongsRef EMPTY_LONGS_REF = new LongsRef();
 
         public Docs(EmptyOrdinals parent) {
-            this.parent = parent;
-        }
-
-        @Override
-        public Ordinals ordinals() {
-            return parent;
-        }
-
-        @Override
-        public int getNumDocs() {
-            return parent.getNumDocs();
-        }
-
-        @Override
-        public long getNumOrds() {
-            return 0;
-        }
-
-        @Override
-        public long getMaxOrd() {
-            return 1;
-        }
-
-        @Override
-        public boolean isMultiValued() {
-            return false;
+            super(parent);
         }
 
         @Override
@@ -101,13 +60,8 @@ public class EmptyOrdinals implements Ordinals {
         }
 
         @Override
-        public LongsRef getOrds(int docId) {
-            return EMPTY_LONGS_REF;
-        }
-
-        @Override
         public long nextOrd() {
-            throw new ElasticSearchIllegalStateException("Empty ordinals has no nextOrd");
+            throw new ElasticsearchIllegalStateException("Empty ordinals has no nextOrd");
         }
 
         @Override

@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -36,6 +36,7 @@ import org.elasticsearch.search.action.SearchServiceTransportAction;
 import org.elasticsearch.search.controller.SearchPhaseController;
 import org.elasticsearch.search.fetch.FetchSearchRequest;
 import org.elasticsearch.search.fetch.FetchSearchResult;
+import org.elasticsearch.search.internal.InternalScrollSearchRequest;
 import org.elasticsearch.search.internal.InternalSearchResponse;
 import org.elasticsearch.search.query.QuerySearchResult;
 import org.elasticsearch.threadpool.ThreadPool;
@@ -92,6 +93,8 @@ public class TransportSearchScrollQueryThenFetchAction extends AbstractComponent
 
         private final long startTime = System.currentTimeMillis();
 
+        private volatile boolean useSlowScroll;
+
         private AsyncAction(SearchScrollRequest request, ParsedScrollId scrollId, ActionListener<SearchResponse> listener) {
             this.request = request;
             this.listener = listener;
@@ -99,8 +102,8 @@ public class TransportSearchScrollQueryThenFetchAction extends AbstractComponent
             this.nodes = clusterService.state().nodes();
             this.successfulOps = new AtomicInteger(scrollId.getContext().length);
 
-            this.queryResults = new AtomicArray<QuerySearchResult>(scrollId.getContext().length);
-            this.fetchResults = new AtomicArray<FetchSearchResult>(scrollId.getContext().length);
+            this.queryResults = new AtomicArray<>(scrollId.getContext().length);
+            this.fetchResults = new AtomicArray<>(scrollId.getContext().length);
         }
 
         protected final ShardSearchFailure[] buildShardFailures() {
@@ -119,7 +122,7 @@ public class TransportSearchScrollQueryThenFetchAction extends AbstractComponent
         // we simply try and return as much as possible
         protected final void addShardFailure(final int shardIndex, ShardSearchFailure failure) {
             if (shardFailures == null) {
-                shardFailures = new AtomicArray<ShardSearchFailure>(scrollId.getContext().length);
+                shardFailures = new AtomicArray<>(scrollId.getContext().length);
             }
             shardFailures.set(shardIndex, failure);
         }
@@ -137,6 +140,9 @@ public class TransportSearchScrollQueryThenFetchAction extends AbstractComponent
                 Tuple<String, Long> target = context[i];
                 DiscoveryNode node = nodes.get(target.v1());
                 if (node != null) {
+                    if (node.getVersion().before(ParsedScrollId.SCROLL_SEARCH_AFTER_MINIMUM_VERSION)) {
+                        useSlowScroll = true;
+                    }
                     if (nodes.localNodeId().equals(node.id())) {
                         localOperations++;
                     } else {
@@ -148,7 +154,12 @@ public class TransportSearchScrollQueryThenFetchAction extends AbstractComponent
                     }
                     successfulOps.decrementAndGet();
                     if (counter.decrementAndGet() == 0) {
-                        executeFetchPhase();
+                        try {
+                            executeFetchPhase();
+                        } catch (Throwable e) {
+                            listener.onFailure(new SearchPhaseExecutionException("query", "Fetch failed", e, null));
+                            return;
+                        }
                     }
                 }
             }
@@ -197,12 +208,17 @@ public class TransportSearchScrollQueryThenFetchAction extends AbstractComponent
         }
 
         private void executeQueryPhase(final int shardIndex, final AtomicInteger counter, DiscoveryNode node, final long searchId) {
-            searchService.sendExecuteQuery(node, internalScrollSearchRequest(searchId, request), new SearchServiceListener<QuerySearchResult>() {
+            InternalScrollSearchRequest internalRequest = internalScrollSearchRequest(searchId, request);
+            searchService.sendExecuteQuery(node, internalRequest, new SearchServiceListener<QuerySearchResult>() {
                 @Override
                 public void onResult(QuerySearchResult result) {
                     queryResults.set(shardIndex, result);
                     if (counter.decrementAndGet() == 0) {
-                        executeFetchPhase();
+                        try {
+                            executeFetchPhase();
+                        } catch (Throwable e) {
+                            onFailure(e);
+                        }
                     }
                 }
 
@@ -220,25 +236,41 @@ public class TransportSearchScrollQueryThenFetchAction extends AbstractComponent
             addShardFailure(shardIndex, new ShardSearchFailure(t));
             successfulOps.decrementAndGet();
             if (counter.decrementAndGet() == 0) {
-                executeFetchPhase();
+                try {
+                    executeFetchPhase();
+                } catch (Throwable e) {
+                    listener.onFailure(new SearchPhaseExecutionException("query", "Fetch failed", e, null));
+                }
             }
         }
 
-        private void executeFetchPhase() {
-            sortedShardList = searchPhaseController.sortDocs(queryResults);
-            AtomicArray<IntArrayList> docIdsToLoad = new AtomicArray<IntArrayList>(queryResults.length());
+        private void executeFetchPhase() throws Exception {
+            if (useSlowScroll) {
+                sortedShardList = searchPhaseController.sortDocs(queryResults);
+            } else {
+                sortedShardList = searchPhaseController.sortDocsForScroll(queryResults);
+            }
+            AtomicArray<IntArrayList> docIdsToLoad = new AtomicArray<>(queryResults.length());
             searchPhaseController.fillDocIdsToLoad(docIdsToLoad, sortedShardList);
 
             if (docIdsToLoad.asList().isEmpty()) {
                 finishHim();
+                return;
             }
 
-            final AtomicInteger counter = new AtomicInteger(docIdsToLoad.asList().size());
 
+            final ScoreDoc[] lastEmittedDocPerShard;
+            if (useSlowScroll) {
+                lastEmittedDocPerShard = new ScoreDoc[queryResults.length()];
+            } else {
+                lastEmittedDocPerShard = searchPhaseController.getLastEmittedDocPerShard(sortedShardList, queryResults.length());
+            }
+            final AtomicInteger counter = new AtomicInteger(docIdsToLoad.asList().size());
             for (final AtomicArray.Entry<IntArrayList> entry : docIdsToLoad.asList()) {
                 IntArrayList docIds = entry.value;
                 final QuerySearchResult querySearchResult = queryResults.get(entry.index);
-                FetchSearchRequest fetchSearchRequest = new FetchSearchRequest(request, querySearchResult.id(), docIds);
+                ScoreDoc lastEmittedDoc = lastEmittedDocPerShard[entry.index];
+                FetchSearchRequest fetchSearchRequest = new FetchSearchRequest(request, querySearchResult.id(), docIds, lastEmittedDoc);
                 DiscoveryNode node = nodes.get(querySearchResult.shardTarget().nodeId());
                 searchService.sendExecuteFetch(node, fetchSearchRequest, new SearchServiceListener<FetchSearchResult>() {
                     @Override

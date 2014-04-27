@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -30,6 +30,8 @@ import org.elasticsearch.cluster.metadata.RepositoriesMetaData;
 import org.elasticsearch.cluster.metadata.RepositoryMetaData;
 import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.repositories.RepositoryException;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 import static org.hamcrest.Matchers.equalTo;
@@ -51,7 +53,7 @@ public class RepositoriesTests extends AbstractSnapshotTests {
         assertThat(putRepositoryResponse.isAcknowledged(), equalTo(true));
 
         logger.info("--> check that repository is really there");
-        ClusterStateResponse clusterStateResponse = client.admin().cluster().prepareState().setFilterAll().setFilterMetaData(false).get();
+        ClusterStateResponse clusterStateResponse = client.admin().cluster().prepareState().clear().setMetaData(true).get();
         MetaData metaData = clusterStateResponse.getState().getMetaData();
         RepositoriesMetaData repositoriesMetaData = metaData.custom(RepositoriesMetaData.TYPE);
         assertThat(repositoriesMetaData, notNullValue());
@@ -66,7 +68,7 @@ public class RepositoriesTests extends AbstractSnapshotTests {
         assertThat(putRepositoryResponse.isAcknowledged(), equalTo(true));
 
         logger.info("--> check that both repositories are in cluster state");
-        clusterStateResponse = client.admin().cluster().prepareState().setFilterAll().setFilterMetaData(false).get();
+        clusterStateResponse = client.admin().cluster().prepareState().clear().setMetaData(true).get();
         metaData = clusterStateResponse.getState().getMetaData();
         repositoriesMetaData = metaData.custom(RepositoriesMetaData.TYPE);
         assertThat(repositoriesMetaData, notNullValue());

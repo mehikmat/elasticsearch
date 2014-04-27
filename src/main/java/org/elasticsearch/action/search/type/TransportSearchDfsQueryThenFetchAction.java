@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -20,11 +20,9 @@
 package org.elasticsearch.action.search.type;
 
 import com.carrotsearch.hppc.IntArrayList;
+import org.apache.lucene.search.ScoreDoc;
 import org.elasticsearch.action.ActionListener;
-import org.elasticsearch.action.search.ReduceSearchPhaseException;
-import org.elasticsearch.action.search.SearchOperationThreading;
-import org.elasticsearch.action.search.SearchRequest;
-import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.action.search.*;
 import org.elasticsearch.cluster.ClusterService;
 import org.elasticsearch.cluster.node.DiscoveryNode;
 import org.elasticsearch.common.inject.Inject;
@@ -70,9 +68,9 @@ public class TransportSearchDfsQueryThenFetchAction extends TransportSearchTypeA
 
         private AsyncAction(SearchRequest request, ActionListener<SearchResponse> listener) {
             super(request, listener);
-            queryResults = new AtomicArray<QuerySearchResult>(firstResults.length());
-            fetchResults = new AtomicArray<FetchSearchResult>(firstResults.length());
-            docIdsToLoad = new AtomicArray<IntArrayList>(firstResults.length());
+            queryResults = new AtomicArray<>(firstResults.length());
+            fetchResults = new AtomicArray<>(firstResults.length());
+            docIdsToLoad = new AtomicArray<>(firstResults.length());
         }
 
         @Override
@@ -167,9 +165,13 @@ public class TransportSearchDfsQueryThenFetchAction extends TransportSearchTypeA
                 logger.debug("[{}] Failed to execute query phase", t, querySearchRequest.id());
             }
             this.addShardFailure(shardIndex, dfsResult.shardTarget(), t);
-            successulOps.decrementAndGet();
+            successfulOps.decrementAndGet();
             if (counter.decrementAndGet() == 0) {
-                executeFetchPhase();
+                if (successfulOps.get() == 0) {
+                    listener.onFailure(new SearchPhaseExecutionException("query", "all shards failed", buildShardFailures()));
+                } else {
+                    executeFetchPhase();
+                }
             }
         }
 
@@ -181,8 +183,8 @@ public class TransportSearchDfsQueryThenFetchAction extends TransportSearchTypeA
             }
         }
 
-        void innerExecuteFetchPhase() {
-            sortedShardList = searchPhaseController.sortDocs(queryResults);
+        void innerExecuteFetchPhase() throws Exception {
+            sortedShardList = searchPhaseController.sortDocs(request, useSlowScroll, queryResults);
             searchPhaseController.fillDocIdsToLoad(docIdsToLoad, sortedShardList);
 
             if (docIdsToLoad.asList().isEmpty()) {
@@ -190,6 +192,9 @@ public class TransportSearchDfsQueryThenFetchAction extends TransportSearchTypeA
                 return;
             }
 
+            final ScoreDoc[] lastEmittedDocPerShard = searchPhaseController.getLastEmittedDocPerShard(
+                    request, sortedShardList, firstResults.length()
+            );
             final AtomicInteger counter = new AtomicInteger(docIdsToLoad.asList().size());
             int localOperations = 0;
             for (final AtomicArray.Entry<IntArrayList> entry : docIdsToLoad.asList()) {
@@ -198,7 +203,7 @@ public class TransportSearchDfsQueryThenFetchAction extends TransportSearchTypeA
                 if (node.id().equals(nodes.localNodeId())) {
                     localOperations++;
                 } else {
-                    FetchSearchRequest fetchSearchRequest = new FetchSearchRequest(request, queryResult.id(), entry.value);
+                    FetchSearchRequest fetchSearchRequest = createFetchRequest(queryResult, entry, lastEmittedDocPerShard);
                     executeFetch(entry.index, queryResult.shardTarget(), counter, fetchSearchRequest, node);
                 }
             }
@@ -212,7 +217,7 @@ public class TransportSearchDfsQueryThenFetchAction extends TransportSearchTypeA
                                 QuerySearchResult queryResult = queryResults.get(entry.index);
                                 DiscoveryNode node = nodes.get(queryResult.shardTarget().nodeId());
                                 if (node.id().equals(nodes.localNodeId())) {
-                                    FetchSearchRequest fetchSearchRequest = new FetchSearchRequest(request, queryResult.id(), entry.value);
+                                    FetchSearchRequest fetchSearchRequest = createFetchRequest(queryResult, entry, lastEmittedDocPerShard);
                                     executeFetch(entry.index, queryResult.shardTarget(), counter, fetchSearchRequest, node);
                                 }
                             }
@@ -224,7 +229,7 @@ public class TransportSearchDfsQueryThenFetchAction extends TransportSearchTypeA
                         final QuerySearchResult queryResult = queryResults.get(entry.index);
                         final DiscoveryNode node = nodes.get(queryResult.shardTarget().nodeId());
                         if (node.id().equals(nodes.localNodeId())) {
-                            final FetchSearchRequest fetchSearchRequest = new FetchSearchRequest(request, queryResult.id(), entry.value);
+                            final FetchSearchRequest fetchSearchRequest = createFetchRequest(queryResult, entry, lastEmittedDocPerShard);
                             try {
                                 if (localAsync) {
                                     threadPool.executor(ThreadPool.Names.SEARCH).execute(new Runnable() {
@@ -268,7 +273,7 @@ public class TransportSearchDfsQueryThenFetchAction extends TransportSearchTypeA
                 logger.debug("[{}] Failed to execute fetch phase", t, fetchSearchRequest.id());
             }
             this.addShardFailure(shardIndex, shardTarget, t);
-            successulOps.decrementAndGet();
+            successfulOps.decrementAndGet();
             if (counter.decrementAndGet() == 0) {
                 finishHim();
             }
@@ -294,7 +299,7 @@ public class TransportSearchDfsQueryThenFetchAction extends TransportSearchTypeA
             if (request.scroll() != null) {
                 scrollId = TransportSearchHelper.buildScrollId(request.searchType(), firstResults, null);
             }
-            listener.onResponse(new SearchResponse(internalResponse, scrollId, expectedSuccessfulOps, successulOps.get(), buildTookInMillis(), buildShardFailures()));
+            listener.onResponse(new SearchResponse(internalResponse, scrollId, expectedSuccessfulOps, successfulOps.get(), buildTookInMillis(), buildShardFailures()));
         }
     }
 }

@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -89,10 +89,11 @@ public class FiltersFunctionScoreQuery extends Query {
         combineFunction = CombineFunction.MULT;
     }
 
-    public FiltersFunctionScoreQuery setCombineFunction(CombineFunction combineFunction){
+    public FiltersFunctionScoreQuery setCombineFunction(CombineFunction combineFunction) {
         this.combineFunction = combineFunction;
         return this;
     }
+
     public Query getSubQuery() {
         return subQuery;
     }
@@ -150,7 +151,10 @@ public class FiltersFunctionScoreQuery extends Query {
 
         @Override
         public Scorer scorer(AtomicReaderContext context, boolean scoreDocsInOrder, boolean topScorer, Bits acceptDocs) throws IOException {
-            Scorer subQueryScorer = subQueryWeight.scorer(context, scoreDocsInOrder, false, acceptDocs);
+            // we ignore scoreDocsInOrder parameter, because we need to score in
+            // order if documents are scored with a script. The
+            // ShardLookup depends on in order scoring.
+            Scorer subQueryScorer = subQueryWeight.scorer(context, true, false, acceptDocs);
             if (subQueryScorer == null) {
                 return null;
             }
@@ -170,7 +174,7 @@ public class FiltersFunctionScoreQuery extends Query {
                 return subQueryExpl;
             }
             // First: Gather explanations for all filters
-            List<ComplexExplanation> filterExplanations = new ArrayList<ComplexExplanation>();
+            List<ComplexExplanation> filterExplanations = new ArrayList<>();
             for (FilterFunction filterFunction : filterFunctions) {
                 Bits docSet = DocIdSets.toSafeBits(context.reader(),
                         filterFunction.filter.getDocIdSet(context, context.reader().getLiveDocs()));

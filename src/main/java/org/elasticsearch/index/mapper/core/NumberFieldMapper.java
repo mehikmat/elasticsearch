@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -35,10 +35,10 @@ import org.apache.lucene.search.Filter;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.store.ByteArrayDataOutput;
 import org.apache.lucene.util.BytesRef;
-import org.apache.lucene.util.NumericUtils;
 import org.elasticsearch.common.Explicit;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.common.unit.Fuzziness;
 import org.elasticsearch.common.util.ByteUtils;
 import org.elasticsearch.common.util.CollectionUtils;
 import org.elasticsearch.common.xcontent.XContentBuilder;
@@ -63,7 +63,11 @@ import java.util.List;
 public abstract class NumberFieldMapper<T extends Number> extends AbstractFieldMapper<T> implements AllFieldMapper.IncludeInAll {
 
     public static class Defaults extends AbstractFieldMapper.Defaults {
-        public static final int PRECISION_STEP = NumericUtils.PRECISION_STEP_DEFAULT;
+        
+        public static final int PRECISION_STEP_8_BIT  = Integer.MAX_VALUE; // 1tpv: 256 terms at most, not useful
+        public static final int PRECISION_STEP_16_BIT = 8;                 // 2tpv
+        public static final int PRECISION_STEP_32_BIT = 8;                 // 4tpv
+        public static final int PRECISION_STEP_64_BIT = 16;                // 4tpv
 
         public static final FieldType FIELD_TYPE = new FieldType(AbstractFieldMapper.Defaults.FIELD_TYPE);
 
@@ -75,21 +79,23 @@ public abstract class NumberFieldMapper<T extends Number> extends AbstractFieldM
             FIELD_TYPE.freeze();
         }
 
-        public static final Explicit<Boolean> IGNORE_MALFORMED = new Explicit<Boolean>(false, false);
+        public static final Explicit<Boolean> IGNORE_MALFORMED = new Explicit<>(false, false);
+        public static final Explicit<Boolean> COERCE = new Explicit<>(true, false);
     }
 
     public abstract static class Builder<T extends Builder, Y extends NumberFieldMapper> extends AbstractFieldMapper.Builder<T, Y> {
 
-        protected int precisionStep = Defaults.PRECISION_STEP;
-
         private Boolean ignoreMalformed;
 
-        public Builder(String name, FieldType fieldType) {
+        private Boolean coerce;
+        
+        public Builder(String name, FieldType fieldType, int defaultPrecisionStep) {
             super(name, fieldType);
+            fieldType.setNumericPrecisionStep(defaultPrecisionStep);
         }
 
         public T precisionStep(int precisionStep) {
-            this.precisionStep = precisionStep;
+            fieldType.setNumericPrecisionStep(precisionStep);
             return builder;
         }
 
@@ -100,13 +106,29 @@ public abstract class NumberFieldMapper<T extends Number> extends AbstractFieldM
 
         protected Explicit<Boolean> ignoreMalformed(BuilderContext context) {
             if (ignoreMalformed != null) {
-                return new Explicit<Boolean>(ignoreMalformed, true);
+                return new Explicit<>(ignoreMalformed, true);
             }
             if (context.indexSettings() != null) {
-                return new Explicit<Boolean>(context.indexSettings().getAsBoolean("index.mapping.ignore_malformed", Defaults.IGNORE_MALFORMED.value()), false);
+                return new Explicit<>(context.indexSettings().getAsBoolean("index.mapping.ignore_malformed", Defaults.IGNORE_MALFORMED.value()), false);
             }
             return Defaults.IGNORE_MALFORMED;
         }
+        
+        public T coerce(boolean coerce) {
+            this.coerce = coerce;
+            return builder;
+        }
+
+        protected Explicit<Boolean> coerce(BuilderContext context) {
+            if (coerce != null) {
+                return new Explicit<>(coerce, true);
+            }
+            if (context.indexSettings() != null) {
+                return new Explicit<>(context.indexSettings().getAsBoolean("index.mapping.coerce", Defaults.COERCE.value()), false);
+            }
+            return Defaults.COERCE;
+        }
+        
     }
 
     protected int precisionStep;
@@ -115,6 +137,8 @@ public abstract class NumberFieldMapper<T extends Number> extends AbstractFieldM
 
     protected Explicit<Boolean> ignoreMalformed;
 
+    protected Explicit<Boolean> coerce;
+    
     private ThreadLocal<NumericTokenStream> tokenStream = new ThreadLocal<NumericTokenStream>() {
         @Override
         protected NumericTokenStream initialValue() {
@@ -135,6 +159,13 @@ public abstract class NumberFieldMapper<T extends Number> extends AbstractFieldM
             return new NumericTokenStream(8);
         }
     };
+    
+    private static ThreadLocal<NumericTokenStream> tokenStream16 = new ThreadLocal<NumericTokenStream>() {
+        @Override
+        protected NumericTokenStream initialValue() {
+            return new NumericTokenStream(16);
+        }
+    };
 
     private static ThreadLocal<NumericTokenStream> tokenStreamMax = new ThreadLocal<NumericTokenStream>() {
         @Override
@@ -143,19 +174,22 @@ public abstract class NumberFieldMapper<T extends Number> extends AbstractFieldM
         }
     };
 
-    protected NumberFieldMapper(Names names, int precisionStep, float boost, FieldType fieldType,
-                                Explicit<Boolean> ignoreMalformed, NamedAnalyzer indexAnalyzer,
+    protected NumberFieldMapper(Names names, int precisionStep, float boost, FieldType fieldType, Boolean docValues,
+                                Explicit<Boolean> ignoreMalformed, Explicit<Boolean> coerce, NamedAnalyzer indexAnalyzer,
                                 NamedAnalyzer searchAnalyzer, PostingsFormatProvider postingsProvider,
                                 DocValuesFormatProvider docValuesProvider, SimilarityProvider similarity,
-                                @Nullable Settings fieldDataSettings, Settings indexSettings) {
+                                Loading normsLoading, @Nullable Settings fieldDataSettings, Settings indexSettings,
+                                MultiFields multiFields, CopyTo copyTo) {
         // LUCENE 4 UPGRADE: Since we can't do anything before the super call, we have to push the boost check down to subclasses
-        super(names, boost, fieldType, indexAnalyzer, searchAnalyzer, postingsProvider, docValuesProvider, similarity, fieldDataSettings, indexSettings);
+        super(names, boost, fieldType, docValues, indexAnalyzer, searchAnalyzer, postingsProvider, docValuesProvider, 
+                similarity, normsLoading, fieldDataSettings, indexSettings, multiFields, copyTo);
         if (precisionStep <= 0 || precisionStep >= maxPrecisionStep()) {
             this.precisionStep = Integer.MAX_VALUE;
         } else {
             this.precisionStep = precisionStep;
         }
         this.ignoreMalformed = ignoreMalformed;
+        this.coerce = coerce;
     }
 
     @Override
@@ -170,6 +204,11 @@ public abstract class NumberFieldMapper<T extends Number> extends AbstractFieldM
         if (includeInAll != null && this.includeInAll == null) {
             this.includeInAll = includeInAll;
         }
+    }
+
+    @Override
+    public void unsetIncludeInAll() {
+        includeInAll = null;
     }
 
     protected abstract int maxPrecisionStep();
@@ -239,7 +278,7 @@ public abstract class NumberFieldMapper<T extends Number> extends AbstractFieldM
     public abstract Filter rangeFilter(Object lowerTerm, Object upperTerm, boolean includeLower, boolean includeUpper, @Nullable QueryParseContext context);
 
     @Override
-    public abstract Query fuzzyQuery(String value, String minSim, int prefixLength, int maxExpansions, boolean transpositions);
+    public abstract Query fuzzyQuery(String value, Fuzziness fuzziness, int prefixLength, int maxExpansions, boolean transpositions);
 
     /**
      * A range filter based on the field data cache.
@@ -326,6 +365,9 @@ public abstract class NumberFieldMapper<T extends Number> extends AbstractFieldM
             if (nfmMergeWith.ignoreMalformed.explicit()) {
                 this.ignoreMalformed = nfmMergeWith.ignoreMalformed;
             }
+            if (nfmMergeWith.coerce.explicit()) {
+                this.coerce = nfmMergeWith.coerce;
+            }
         }
     }
 
@@ -336,11 +378,11 @@ public abstract class NumberFieldMapper<T extends Number> extends AbstractFieldM
     protected NumericTokenStream popCachedStream() {
         if (precisionStep == 4) {
             return tokenStream4.get();
-        }
-        if (precisionStep == 8) {
+        } else if (precisionStep == 8) {
             return tokenStream8.get();
-        }
-        if (precisionStep == Integer.MAX_VALUE) {
+        } else if (precisionStep == 16) {
+            return tokenStream16.get();
+        } else if (precisionStep == Integer.MAX_VALUE) {
             return tokenStreamMax.get();
         }
         return tokenStream.get();
@@ -468,6 +510,9 @@ public abstract class NumberFieldMapper<T extends Number> extends AbstractFieldM
 
         if (includeDefaults || ignoreMalformed.explicit()) {
             builder.field("ignore_malformed", ignoreMalformed.value());
+        }
+        if (includeDefaults || coerce.explicit()) {
+            builder.field("coerce", coerce.value());
         }
     }
 

@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -70,9 +70,11 @@ public class AllocationDecidersModule extends AbstractModule {
             add(RebalanceOnlyWhenActiveAllocationDecider.class).
             add(ClusterRebalanceAllocationDecider.class).
             add(ConcurrentRebalanceAllocationDecider.class).
+            add(EnableAllocationDecider.class). // new enable allocation logic should proceed old disable allocation logic
             add(DisableAllocationDecider.class).
             add(AwarenessAllocationDecider.class).
             add(ShardsLimitAllocationDecider.class).
+            add(NodeVersionAllocationDecider.class).
             add(DiskThresholdDecider.class).
             add(SnapshotInProgressAllocationDecider.class).build();
 }

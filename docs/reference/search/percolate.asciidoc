@@ -9,7 +9,7 @@ index and then via the percolate api you define documents in order to retrieve t
 
 The reason that queries can be stored comes from the fact that in Elasticsearch both documents and queries are defined in
 JSON. This allows you to embed queries into documents via the index api. Elasticsearch can extract the query from a
-document and make it available to the percolate api. Since documents are also defines as json, you can define a document
+document and make it available to the percolate api. Since documents are also defined as json, you can define a document
 in a request to the percolate api.
 
 The percolator and most of its features work in realtime, so once a percolate query is indexed it can immediately be used
@@ -53,7 +53,7 @@ The above request will yield the following response:
         "successful" : 5,
         "failed" : 0
     },
-    "count" : 1,
+    "total" : 1,
     "matches" : [
     	{
     	     "_index" : "my-index",
@@ -141,7 +141,7 @@ Because `.percolate` is a type it also has a mapping. By default the following m
 }
 --------------------------------------------------
 
-If needed this mapping can be modified wit the update mapping api.
+If needed this mapping can be modified with the update mapping api.
 
 In order to un-register a percolate query the delete api can be used. So if the previous added query needs to be deleted
 the following delete requests needs to be executed:
@@ -177,9 +177,9 @@ that the percolate request only gets executed on the shard where the routing val
 the percolate request only gets executed on one shard instead of all shards. Multiple values can be specified as a
 comma separated string, in that case the request can be be executed on more than one shard.
 * `preference` - Controls which shard replicas are preferred to execute the request on. Works the same as in the search api.
-* `ignore_indices` - Controls if missing indices should silently be ignored. Same as is in the search api.
+* `ignore_unavailable` - Controls if missing concrete indices should silently be ignored. Same as is in the search api.
 * `percolate_format` - If `ids` is specified then the matches array in the percolate response will contain a string
-array of the matching ids instead of an array of objects. This can be useful the reduce the amount of data being send
+array of the matching ids instead of an array of objects. This can be useful to reduce the amount of data being send
 back to the client. Obviously if there are to percolator queries with same id from different indices there is no way
 the find out which percolator query belongs to what index. Any other value to `percolate_format` will be ignored.
 
@@ -188,13 +188,15 @@ the find out which percolator query belongs to what index. Any other value to `p
 filter will be included in the percolate execution. The filter option works in near realtime, so a refresh needs to have
 occurred for the filter to included the latest percolate queries.
 * `query` - Same as the `filter` option, but also the score is computed. The computed scores can then be used by the
-`score` and `sort` option.
+`track_scores` and `sort` option.
 * `size` - Defines to maximum number of matches (percolate queries) to be returned. Defaults to unlimited.
-* `score` - Whether the `_score` is included for each match. The is based on the query and represents how the query matched
+* `track_scores` - Whether the `_score` is included for each match. The is based on the query and represents how the query matched
 to the percolate query's metadata and *not* how the document being percolated matched to the query. The `query` option
 is required for this option. Defaults to `false`.
-* `sort` - Whether the matches should be sorted by the `_score`. Similar to the `score` option, but also sorts the
-matches. The `size` and `query` option are required for this option. Defaults to `false`.
+* `sort` - Define a sort specification like in the search api. Currently only sorting `_score` reverse (default relevancy)
+is supported. Other sort fields will throw an exception. The `size` and `query` option are required for this setting. Like
+`track_score` the score is based on the query and represents how the query matched to the percolate query's metadata
+and *not* how the document being percolated matched to the query.
 * `facets` - Allows facet definitions to be included. The facets are based on the matching percolator queries. See facet
 documentation how to define facets.
 * `aggs` - Allows aggregation definitions to be included. The aggregations are based on the matching percolator queries,
@@ -264,7 +266,7 @@ Response:
 === Percolating an existing document
 
 In order to percolate in newly indexed document, the percolate existing document can be used. Based on the response
-from an index request the `_id` and other meta information can be used to the immediately percolate the newly added
+from an index request the `_id` and other meta information can be used to immediately percolate the newly added
 document.
 
 .Supported options for percolating an existing document on top of existing percolator options:
@@ -276,7 +278,6 @@ document.
 * `percolate_routing` - The routing value to use when percolating the existing document.
 * `percolate_preference` - Which shard to prefer when executing the percolate request.
 * `version` - Enables a version check. If the fetched document's version isn't equal to the specified version then the request fails with a version conflict and the percolation request is aborted.
-* `version_type` - Whether internal or external versioning is used. Defaults to internal versioning.
 
 Internally the percolate api will issue a get request for fetching the`_source` of the document to percolate.
 For this feature to work the `_source` for documents to be percolated need to be stored.
@@ -289,11 +290,11 @@ Index response:
 [source,js]
 --------------------------------------------------
 {
-	"ok" : true,
 	"_index" : "my-index",
 	"_type" : "message",
 	"_id" : "1",
-	"_version" : 1
+	"_version" : 1,
+	"created" : true
 }
 --------------------------------------------------
 
@@ -435,7 +436,7 @@ the time the percolate api needs to run can be decreased.
 === Important notes
 
 Because the percolator API is processing one document at a time, it doesn't support queries and filters that run
-against child and nested documents such as `has_child`, `has_parent`, `top_children`, and `nested`.
+against child documents such as `has_child`, `has_parent` and `top_children`.
 
 The `wildcard` and `regexp` query natively use a lot of memory and because the percolator keeps the queries into memory
 this can easily take up the available memory in the heap space. If possible try to use a `prefix` query or ngramming to

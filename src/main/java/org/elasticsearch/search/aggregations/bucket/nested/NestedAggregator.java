@@ -1,13 +1,13 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,7 +16,6 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.search.aggregations.bucket.nested;
 
 import org.apache.lucene.index.AtomicReaderContext;
@@ -32,6 +31,7 @@ import org.elasticsearch.index.search.nested.NonNestedDocsFilter;
 import org.elasticsearch.search.aggregations.*;
 import org.elasticsearch.search.aggregations.bucket.SingleBucketAggregator;
 import org.elasticsearch.search.aggregations.support.AggregationContext;
+import org.elasticsearch.search.internal.SearchContext;
 
 import java.io.IOException;
 
@@ -40,14 +40,16 @@ import java.io.IOException;
  */
 public class NestedAggregator extends SingleBucketAggregator implements ReaderContextAware {
 
-    private final Filter parentFilter;
+    private final Aggregator parentAggregator;
+    private Filter parentFilter;
     private final Filter childFilter;
 
     private Bits childDocs;
     private FixedBitSet parentDocs;
 
-    public NestedAggregator(String name, AggregatorFactories factories, String nestedPath, AggregationContext aggregationContext, Aggregator parent) {
-        super(name, factories, aggregationContext, parent);
+    public NestedAggregator(String name, AggregatorFactories factories, String nestedPath, AggregationContext aggregationContext, Aggregator parentAggregator) {
+        super(name, factories, aggregationContext, parentAggregator);
+        this.parentAggregator = parentAggregator;
         MapperService.SmartNameObjectMapper mapper = aggregationContext.searchContext().smartNameObjectMapper(nestedPath);
         if (mapper == null) {
             throw new AggregationExecutionException("facet nested path [" + nestedPath + "] not found");
@@ -59,12 +61,36 @@ public class NestedAggregator extends SingleBucketAggregator implements ReaderCo
         if (!objectMapper.nested().isNested()) {
             throw new AggregationExecutionException("facet nested path [" + nestedPath + "] is not nested");
         }
-        parentFilter = aggregationContext.searchContext().filterCache().cache(NonNestedDocsFilter.INSTANCE);
+
         childFilter = aggregationContext.searchContext().filterCache().cache(objectMapper.nestedTypeFilter());
+    }
+
+    private NestedAggregator findClosestNestedAggregator(Aggregator parent) {
+        for (; parent != null; parent = parent.parent()) {
+            if (parent instanceof NestedAggregator) {
+                return (NestedAggregator) parent;
+            }
+        }
+        return null;
     }
 
     @Override
     public void setNextReader(AtomicReaderContext reader) {
+        if (parentFilter == null) {
+            NestedAggregator closestNestedAggregator = findClosestNestedAggregator(parentAggregator);
+            final Filter parentFilterNotCached;
+            if (closestNestedAggregator == null) {
+                parentFilterNotCached = NonNestedDocsFilter.INSTANCE;
+            } else {
+                // The aggs are instantiated in reverse, first the most inner nested aggs and lastly the top level aggs
+                // So at the time a nested 'nested' aggs is parsed its closest parent nested aggs hasn't been constructed.
+                // So the trick to set at the last moment just before needed and we can use its child filter as the
+                // parent filter.
+                parentFilterNotCached = closestNestedAggregator.childFilter;
+            }
+            parentFilter = SearchContext.current().filterCache().cache(parentFilterNotCached);
+        }
+
         try {
             DocIdSet docIdSet = parentFilter.getDocIdSet(reader, null);
             // In ES if parent is deleted, then also the children are deleted. Therefore acceptedDocs can also null here.
@@ -120,9 +146,7 @@ public class NestedAggregator extends SingleBucketAggregator implements ReaderCo
 
         @Override
         public Aggregator create(AggregationContext context, Aggregator parent, long expectedBucketsCount) {
-            NestedAggregator aggregator = new NestedAggregator(name, factories, path, context, parent);
-            context.registerReaderContextAware(aggregator);
-            return aggregator;
+            return new NestedAggregator(name, factories, path, context, parent);
         }
     }
 }

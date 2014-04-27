@@ -1,13 +1,13 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,41 +16,41 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.search.aggregations.metrics.avg;
 
-import org.elasticsearch.common.util.BigArrays;
+import org.apache.lucene.index.AtomicReaderContext;
+import org.elasticsearch.common.lease.Releasables;
 import org.elasticsearch.common.util.DoubleArray;
 import org.elasticsearch.common.util.LongArray;
 import org.elasticsearch.index.fielddata.DoubleValues;
 import org.elasticsearch.search.aggregations.Aggregator;
 import org.elasticsearch.search.aggregations.InternalAggregation;
+import org.elasticsearch.search.aggregations.metrics.MetricsAggregator;
 import org.elasticsearch.search.aggregations.support.AggregationContext;
+import org.elasticsearch.search.aggregations.support.ValuesSource;
+import org.elasticsearch.search.aggregations.support.ValuesSourceAggregatorFactory;
 import org.elasticsearch.search.aggregations.support.ValuesSourceConfig;
-import org.elasticsearch.search.aggregations.support.numeric.NumericValuesSource;
-import org.elasticsearch.search.aggregations.AggregatorFactories;
-import org.elasticsearch.search.aggregations.support.ValueSourceAggregatorFactory;
 
 import java.io.IOException;
 
 /**
  *
  */
-public class AvgAggregator extends Aggregator {
+public class AvgAggregator extends MetricsAggregator.SingleValue {
 
-    private final NumericValuesSource valuesSource;
+    private final ValuesSource.Numeric valuesSource;
+    private DoubleValues values;
 
     private LongArray counts;
     private DoubleArray sums;
 
-
-    public AvgAggregator(String name, long estimatedBucketsCount, NumericValuesSource valuesSource, AggregationContext context, Aggregator parent) {
-        super(name, BucketAggregationMode.MULTI_BUCKETS, AggregatorFactories.EMPTY, estimatedBucketsCount, context, parent);
+    public AvgAggregator(String name, long estimatedBucketsCount, ValuesSource.Numeric valuesSource, AggregationContext context, Aggregator parent) {
+        super(name, estimatedBucketsCount, context, parent);
         this.valuesSource = valuesSource;
         if (valuesSource != null) {
             final long initialSize = estimatedBucketsCount < 2 ? 1 : estimatedBucketsCount;
-            counts = BigArrays.newLongArray(initialSize);
-            sums = BigArrays.newDoubleArray(initialSize);
+            counts = bigArrays.newLongArray(initialSize, true);
+            sums = bigArrays.newDoubleArray(initialSize, true);
         }
     }
 
@@ -60,16 +60,14 @@ public class AvgAggregator extends Aggregator {
     }
 
     @Override
+    public void setNextReader(AtomicReaderContext reader) {
+        values = valuesSource.doubleValues();
+    }
+
+    @Override
     public void collect(int doc, long owningBucketOrdinal) throws IOException {
-        assert valuesSource != null : "if value source is null, collect should never be called";
-
-        DoubleValues values = valuesSource.doubleValues();
-        if (values == null) {
-            return;
-        }
-
-        counts = BigArrays.grow(counts, owningBucketOrdinal + 1);
-        sums = BigArrays.grow(sums, owningBucketOrdinal + 1);
+        counts = bigArrays.grow(counts, owningBucketOrdinal + 1);
+        sums = bigArrays.grow(sums, owningBucketOrdinal + 1);
 
         final int valueCount = values.setDocument(doc);
         counts.increment(owningBucketOrdinal, valueCount);
@@ -78,6 +76,11 @@ public class AvgAggregator extends Aggregator {
             sum += values.nextValue();
         }
         sums.increment(owningBucketOrdinal, sum);
+    }
+
+    @Override
+    public double metric(long owningBucketOrd) {
+        return valuesSource == null ? Double.NaN : sums.get(owningBucketOrd) / counts.get(owningBucketOrd);
     }
 
     @Override
@@ -93,9 +96,9 @@ public class AvgAggregator extends Aggregator {
         return new InternalAvg(name, 0.0, 0l);
     }
 
-    public static class Factory extends ValueSourceAggregatorFactory.LeafOnly<NumericValuesSource> {
+    public static class Factory extends ValuesSourceAggregatorFactory.LeafOnly<ValuesSource.Numeric> {
 
-        public Factory(String name, String type, ValuesSourceConfig<NumericValuesSource> valuesSourceConfig) {
+        public Factory(String name, String type, ValuesSourceConfig<ValuesSource.Numeric> valuesSourceConfig) {
             super(name, type, valuesSourceConfig);
         }
 
@@ -105,9 +108,14 @@ public class AvgAggregator extends Aggregator {
         }
 
         @Override
-        protected Aggregator create(NumericValuesSource valuesSource, long expectedBucketsCount, AggregationContext aggregationContext, Aggregator parent) {
+        protected Aggregator create(ValuesSource.Numeric valuesSource, long expectedBucketsCount, AggregationContext aggregationContext, Aggregator parent) {
             return new AvgAggregator(name, expectedBucketsCount, valuesSource, aggregationContext, parent);
         }
+    }
+
+    @Override
+    public void doClose() {
+        Releasables.close(counts, sums);
     }
 
 }

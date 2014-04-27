@@ -1,13 +1,13 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,22 +16,40 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.search.aggregations.bucket.histogram;
 
 import org.joda.time.DateTime;
 
+import java.util.Collection;
+
 /**
- *
+ * A {@code date_histogram} aggregation.
  */
-public interface DateHistogram extends HistogramBase<DateHistogram.Bucket> {
+public interface DateHistogram extends Histogram {
 
-    static interface Bucket extends HistogramBase.Bucket {
+    static interface Bucket extends Histogram.Bucket {
 
+        /**
+         * @return the key as a date construct (in UTC timezone).
+         */
         DateTime getKeyAsDate();
 
     }
 
+    @Override
+    Collection<? extends DateHistogram.Bucket> getBuckets();
+
+    @Override
+    Bucket getBucketByKey(String key);
+
+    @Override
+    Bucket getBucketByKey(Number key);
+
+    Bucket getBucketByKey(DateTime key);
+
+    /**
+     * The interval the date histogram is based on.
+     */
     static class Interval {
 
         public static final Interval SECOND = new Interval("1s");
@@ -59,7 +77,7 @@ public interface DateHistogram extends HistogramBase<DateHistogram.Bucket> {
             return new Interval(days + "d");
         }
 
-        public static Interval week(int weeks) {
+        public static Interval weeks(int weeks) {
             return new Interval(weeks + "w");
         }
 

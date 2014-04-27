@@ -1,21 +1,21 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements. See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations under
- * the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
-
 package org.elasticsearch.test.rest.parser;
 
 import com.google.common.collect.Maps;
@@ -44,20 +44,20 @@ public class RestTestSuiteParseContext {
         EXECUTABLE_SECTIONS_PARSERS.put("is_true", new IsTrueParser());
         EXECUTABLE_SECTIONS_PARSERS.put("is_false", new IsFalseParser());
         EXECUTABLE_SECTIONS_PARSERS.put("gt", new GreaterThanParser());
+        EXECUTABLE_SECTIONS_PARSERS.put("gte", new GreaterThanEqualToParser());
         EXECUTABLE_SECTIONS_PARSERS.put("lt", new LessThanParser());
+        EXECUTABLE_SECTIONS_PARSERS.put("lte", new LessThanOrEqualToParser());
         EXECUTABLE_SECTIONS_PARSERS.put("length", new LengthParser());
     }
 
     private final String api;
     private final String suiteName;
     private final XContentParser parser;
-    private final String currentVersion;
 
-    public RestTestSuiteParseContext(String api, String suiteName, XContentParser parser, String currentVersion) {
+    public RestTestSuiteParseContext(String api, String suiteName, XContentParser parser) {
         this.api = api;
         this.suiteName = suiteName;
         this.parser = parser;
-        this.currentVersion = currentVersion;
     }
 
     public String getApi() {
@@ -70,10 +70,6 @@ public class RestTestSuiteParseContext {
 
     public XContentParser parser() {
         return parser;
-    }
-
-    public String getCurrentVersion() {
-        return currentVersion;
     }
 
     public SetupSection parseSetupSection() throws IOException, RestTestParseException {
@@ -136,7 +132,7 @@ public class RestTestSuiteParseContext {
             token = parser.nextToken();
         }
         if (token != XContentParser.Token.FIELD_NAME) {
-            throw new RestTestParseException("malformed test section: field suiteName expected but found " + token);
+            throw new RestTestParseException("malformed test section: field name expected but found " + token);
         }
     }
 

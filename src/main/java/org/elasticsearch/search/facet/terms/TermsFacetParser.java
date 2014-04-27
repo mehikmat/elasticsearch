@@ -1,13 +1,13 @@
 /*
- * Licensed to Elastic Search and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. Elastic Search licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,13 +16,12 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.search.facet.terms;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import org.apache.lucene.util.BytesRef;
-import org.elasticsearch.ElasticSearchParseException;
+import org.elasticsearch.ElasticsearchParseException;
 import org.elasticsearch.common.component.AbstractComponent;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.regex.Regex;
@@ -105,7 +104,7 @@ public class TermsFacetParser extends AbstractComponent implements FacetParser {
                 if ("params".equals(currentFieldName)) {
                     params = parser.map();
                 } else {
-                    throw new ElasticSearchParseException("unknown parameter [" + currentFieldName + "] while parsing terms facet [" + facetName + "]");
+                    throw new ElasticsearchParseException("unknown parameter [" + currentFieldName + "] while parsing terms facet [" + facetName + "]");
                 }
             } else if (token == XContentParser.Token.START_ARRAY) {
                 if ("exclude".equals(currentFieldName)) {
@@ -121,7 +120,7 @@ public class TermsFacetParser extends AbstractComponent implements FacetParser {
                     }
                     fieldsNames = fields.toArray(new String[fields.size()]);
                 } else {
-                    throw new ElasticSearchParseException("unknown parameter [" + currentFieldName + "] while parsing terms facet [" + facetName + "]");
+                    throw new ElasticsearchParseException("unknown parameter [" + currentFieldName + "] while parsing terms facet [" + facetName + "]");
                 }
             } else if (token.isValue()) {
                 if ("field".equals(currentFieldName)) {
@@ -147,7 +146,7 @@ public class TermsFacetParser extends AbstractComponent implements FacetParser {
                 } else if ("execution_hint".equals(currentFieldName) || "executionHint".equals(currentFieldName)) {
                     executionHint = parser.textOrNull();
                 } else {
-                    throw new ElasticSearchParseException("unknown parameter [" + currentFieldName + "] while parsing terms facet [" + facetName + "]");
+                    throw new ElasticsearchParseException("unknown parameter [" + currentFieldName + "] while parsing terms facet [" + facetName + "]");
                 }
             }
         }
@@ -179,7 +178,7 @@ public class TermsFacetParser extends AbstractComponent implements FacetParser {
         if (fieldsNames != null) {
 
             // in case of multi files, we only collect the fields that are mapped and facet on them.
-            ArrayList<FieldMapper> mappers = new ArrayList<FieldMapper>(fieldsNames.length);
+            ArrayList<FieldMapper> mappers = new ArrayList<>(fieldsNames.length);
             for (int i = 0; i < fieldsNames.length; i++) {
                 FieldMapper mapper = context.smartNameFieldMapper(fieldsNames[i]);
                 if (mapper != null) {
@@ -197,7 +196,7 @@ public class TermsFacetParser extends AbstractComponent implements FacetParser {
         }
 
         if (field == null) {
-            throw new ElasticSearchParseException("terms facet [" + facetName + "] must have a field, fields or script parameter");
+            throw new ElasticsearchParseException("terms facet [" + facetName + "] must have a field, fields or script parameter");
         }
 
         FieldMapper fieldMapper = context.smartNameFieldMapper(field);

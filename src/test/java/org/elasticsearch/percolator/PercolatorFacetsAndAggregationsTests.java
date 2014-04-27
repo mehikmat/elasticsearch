@@ -1,13 +1,13 @@
 /*
- * Licensed to Elastic Search and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. Elastic Search licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,7 +16,6 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.percolator;
 
 import org.elasticsearch.action.percolate.PercolateRequestBuilder;
@@ -52,7 +51,7 @@ public class PercolatorFacetsAndAggregationsTests extends ElasticsearchIntegrati
         client().admin().indices().prepareCreate("test").execute().actionGet();
         ensureGreen();
 
-        int numQueries = atLeast(250);
+        int numQueries = scaledRandomIntBetween(250, 500);
         int numUniqueQueries = between(1, numQueries / 2);
         String[] values = new String[numUniqueQueries];
         for (int i = 0; i < values.length; i++) {
@@ -91,7 +90,7 @@ public class PercolatorFacetsAndAggregationsTests extends ElasticsearchIntegrati
             if (randomBoolean()) {
                 percolateRequestBuilder.setScore(true);
             } else {
-                percolateRequestBuilder.setSort(true).setSize(numQueries);
+                percolateRequestBuilder.setSortByScore(true).setSize(numQueries);
             }
 
             boolean countOnly = randomBoolean();
@@ -109,9 +108,9 @@ public class PercolatorFacetsAndAggregationsTests extends ElasticsearchIntegrati
                 List<Aggregation> aggregations = response.getAggregations().asList();
                 assertThat(aggregations.size(), equalTo(1));
                 assertThat(aggregations.get(0).getName(), equalTo("a"));
-                List<Terms.Bucket> buckets = new ArrayList<Terms.Bucket>(((Terms) aggregations.get(0)).buckets());
+                List<Terms.Bucket> buckets = new ArrayList<>(((Terms) aggregations.get(0)).getBuckets());
                 assertThat(buckets.size(), equalTo(1));
-                assertThat(buckets.get(0).getKey().string(), equalTo("b"));
+                assertThat(buckets.get(0).getKeyAsText().string(), equalTo("b"));
                 assertThat(buckets.get(0).getDocCount(), equalTo((long) expectedCount[i % values.length]));
             } else {
                 assertThat(response.getFacets().facets().size(), equalTo(1));

@@ -1,13 +1,13 @@
 /*
- * Licensed to Elastic Search and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. Elastic Search licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,13 +16,11 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.validate;
 
 import com.google.common.base.Charsets;
 import org.elasticsearch.action.admin.indices.validate.query.ValidateQueryResponse;
 import org.elasticsearch.client.Client;
-import org.elasticsearch.common.Priority;
 import org.elasticsearch.common.geo.GeoDistance;
 import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.unit.DistanceUnit;
@@ -40,7 +38,8 @@ import org.junit.Test;
 import java.io.IOException;
 
 import static org.elasticsearch.index.query.QueryBuilders.queryString;
-import static org.elasticsearch.test.hamcrest.ElasticsearchAssertions.*;
+import static org.elasticsearch.test.hamcrest.ElasticsearchAssertions.assertAcked;
+import static org.elasticsearch.test.hamcrest.ElasticsearchAssertions.assertNoFailures;
 import static org.hamcrest.Matchers.*;
 
 /**
@@ -50,9 +49,8 @@ public class SimpleValidateQueryTests extends ElasticsearchIntegrationTest {
 
     @Test
     public void simpleValidateQuery() throws Exception {
-
-        client().admin().indices().prepareCreate("test").setSettings(ImmutableSettings.settingsBuilder().put("index.number_of_shards", 1)).execute().actionGet();
-        client().admin().cluster().prepareHealth().setWaitForEvents(Priority.LANGUID).setWaitForGreenStatus().execute().actionGet();
+        createIndex("test");
+        ensureGreen();
         client().admin().indices().preparePutMapping("test").setType("type1")
                 .setSource(XContentFactory.jsonBuilder().startObject().startObject("type1").startObject("properties")
                         .startObject("foo").field("type", "string").endObject()
@@ -60,9 +58,9 @@ public class SimpleValidateQueryTests extends ElasticsearchIntegrationTest {
                         .endObject().endObject().endObject())
                 .execute().actionGet();
 
-        client().admin().indices().prepareRefresh().execute().actionGet();
+        refresh();
 
-        assertThat(client().admin().indices().prepareValidateQuery("test").setQuery("foo".getBytes(Charsets.UTF_8)).execute().actionGet().isValid(), equalTo(false));
+        assertThat(client().admin().indices().prepareValidateQuery("test").setSource("foo".getBytes(Charsets.UTF_8)).execute().actionGet().isValid(), equalTo(false));
         assertThat(client().admin().indices().prepareValidateQuery("test").setQuery(QueryBuilders.queryString("_id:1")).execute().actionGet().isValid(), equalTo(true));
         assertThat(client().admin().indices().prepareValidateQuery("test").setQuery(QueryBuilders.queryString("_i:d:1")).execute().actionGet().isValid(), equalTo(false));
 
@@ -76,9 +74,8 @@ public class SimpleValidateQueryTests extends ElasticsearchIntegrationTest {
 
     @Test
     public void explainValidateQuery() throws Exception {
-
-        client().admin().indices().prepareCreate("test").setSettings(ImmutableSettings.settingsBuilder().put("index.number_of_shards", 1)).execute().actionGet();
-        client().admin().cluster().prepareHealth().setWaitForEvents(Priority.LANGUID).setWaitForGreenStatus().execute().actionGet();
+        createIndex("test");
+        ensureGreen();
         client().admin().indices().preparePutMapping("test").setType("type1")
                 .setSource(XContentFactory.jsonBuilder().startObject().startObject("type1").startObject("properties")
                         .startObject("foo").field("type", "string").endObject()
@@ -96,12 +93,11 @@ public class SimpleValidateQueryTests extends ElasticsearchIntegrationTest {
                         .endObject().endObject())
                 .execute().actionGet();
 
-        client().admin().indices().prepareRefresh().execute().actionGet();
-
+        refresh();
 
         ValidateQueryResponse response;
         response = client().admin().indices().prepareValidateQuery("test")
-                .setQuery("foo".getBytes(Charsets.UTF_8))
+                .setSource("foo".getBytes(Charsets.UTF_8))
                 .setExplain(true)
                 .execute().actionGet();
         assertThat(response.isValid(), equalTo(false));
@@ -137,7 +133,8 @@ public class SimpleValidateQueryTests extends ElasticsearchIntegrationTest {
                         .addPoint(40, -70)
                         .addPoint(30, -80)
                         .addPoint(20, -90)
-        ), equalTo("ConstantScore(GeoPolygonFilter(pin.location, [[40.0, -70.0], [30.0, -80.0], [20.0, -90.0]]))"));
+                        .addPoint(40, -70)    // closing polygon
+        ), equalTo("ConstantScore(GeoPolygonFilter(pin.location, [[40.0, -70.0], [30.0, -80.0], [20.0, -90.0], [40.0, -70.0]]))"));
 
         assertExplanation(QueryBuilders.constantScoreQuery(FilterBuilders.geoBoundingBoxFilter("pin.location")
                 .topLeft(40, -80)
@@ -145,16 +142,20 @@ public class SimpleValidateQueryTests extends ElasticsearchIntegrationTest {
         ), equalTo("ConstantScore(GeoBoundingBoxFilter(pin.location, [40.0, -80.0], [20.0, -70.0]))"));
 
         assertExplanation(QueryBuilders.constantScoreQuery(FilterBuilders.geoDistanceFilter("pin.location")
-                .lat(10).lon(20).distance(15, DistanceUnit.MILES).geoDistance(GeoDistance.PLANE)
+                .lat(10).lon(20).distance(15, DistanceUnit.DEFAULT).geoDistance(GeoDistance.PLANE)
         ), equalTo("ConstantScore(GeoDistanceFilter(pin.location, PLANE, 15.0, 10.0, 20.0))"));
 
         assertExplanation(QueryBuilders.constantScoreQuery(FilterBuilders.geoDistanceFilter("pin.location")
-                .lat(10).lon(20).distance(15, DistanceUnit.MILES).geoDistance(GeoDistance.PLANE)
+                .lat(10).lon(20).distance(15, DistanceUnit.DEFAULT).geoDistance(GeoDistance.PLANE)
         ), equalTo("ConstantScore(GeoDistanceFilter(pin.location, PLANE, 15.0, 10.0, 20.0))"));
 
         assertExplanation(QueryBuilders.constantScoreQuery(FilterBuilders.geoDistanceRangeFilter("pin.location")
-                .lat(10).lon(20).from("15miles").to("25miles").geoDistance(GeoDistance.PLANE)
+                .lat(10).lon(20).from("15m").to("25m").geoDistance(GeoDistance.PLANE)
         ), equalTo("ConstantScore(GeoDistanceRangeFilter(pin.location, PLANE, [15.0 - 25.0], 10.0, 20.0))"));
+
+        assertExplanation(QueryBuilders.constantScoreQuery(FilterBuilders.geoDistanceRangeFilter("pin.location")
+                .lat(10).lon(20).from("15miles").to("25miles").geoDistance(GeoDistance.PLANE)
+        ), equalTo("ConstantScore(GeoDistanceRangeFilter(pin.location, PLANE, [" + DistanceUnit.DEFAULT.convert(15.0, DistanceUnit.MILES) + " - " + DistanceUnit.DEFAULT.convert(25.0, DistanceUnit.MILES) + "], 10.0, 20.0))"));
 
         assertExplanation(QueryBuilders.filteredQuery(
                 QueryBuilders.termQuery("foo", "1"),
@@ -187,11 +188,8 @@ public class SimpleValidateQueryTests extends ElasticsearchIntegrationTest {
 
     @Test
     public void explainValidateQueryTwoNodes() throws IOException {
-
-        client().admin().indices().prepareCreate("test").setSettings(ImmutableSettings.settingsBuilder()
-                .put("index.number_of_shards", 1)
-                .put("index.number_of_replicas", 0)).execute().actionGet();
-        client().admin().cluster().prepareHealth().setWaitForEvents(Priority.LANGUID).setWaitForGreenStatus().execute().actionGet();
+        createIndex("test");
+        ensureGreen();
         client().admin().indices().preparePutMapping("test").setType("type1")
                 .setSource(XContentFactory.jsonBuilder().startObject().startObject("type1").startObject("properties")
                         .startObject("foo").field("type", "string").endObject()
@@ -201,13 +199,11 @@ public class SimpleValidateQueryTests extends ElasticsearchIntegrationTest {
                         .endObject().endObject().endObject())
                 .execute().actionGet();
 
-        client().admin().indices().prepareRefresh().execute().actionGet();
+        refresh();
 
-
-        
         for (Client client : cluster()) {
             ValidateQueryResponse response = client.admin().indices().prepareValidateQuery("test")
-                    .setQuery("foo".getBytes(Charsets.UTF_8))
+                    .setSource("foo".getBytes(Charsets.UTF_8))
                     .setExplain(true)
                     .execute().actionGet();
             assertThat(response.isValid(), equalTo(false));
@@ -231,7 +227,9 @@ public class SimpleValidateQueryTests extends ElasticsearchIntegrationTest {
 
     @Test //https://github.com/elasticsearch/elasticsearch/issues/3629
     public void explainDateRangeInQueryString() {
-        client().admin().indices().prepareCreate("test").setSettings(ImmutableSettings.settingsBuilder().put("index.number_of_shards", 1)).get();
+        assertAcked(prepareCreate("test").setSettings(ImmutableSettings.settingsBuilder()
+                .put(indexSettings())
+                .put("index.number_of_shards", 1)));
 
         String aMonthAgo = ISODateTimeFormat.yearMonthDay().print(new DateTime(DateTimeZone.UTC).minusMonths(1));
         String aMonthFromNow = ISODateTimeFormat.yearMonthDay().print(new DateTime(DateTimeZone.UTC).plusMonths(1));

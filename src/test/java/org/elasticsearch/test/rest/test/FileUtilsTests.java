@@ -1,21 +1,21 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements. See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations under
- * the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
-
 package org.elasticsearch.test.rest.test;
 
 import org.elasticsearch.test.ElasticsearchTestCase;
@@ -34,29 +34,29 @@ public class FileUtilsTests extends ElasticsearchTestCase {
 
     @Test
     public void testLoadSingleYamlSuite() throws Exception {
-        Map<String,Set<File>> yamlSuites = FileUtils.findYamlSuites("/rest-spec/test", "/rest-spec/test/get/10_basic");
+        Map<String,Set<File>> yamlSuites = FileUtils.findYamlSuites("/rest-api-spec/test", "/rest-api-spec/test/get/10_basic");
         assertSingleFile(yamlSuites, "get", "10_basic.yaml");
 
         //the path prefix is optional
-        yamlSuites = FileUtils.findYamlSuites("/rest-spec/test", "get/10_basic.yaml");
+        yamlSuites = FileUtils.findYamlSuites("/rest-api-spec/test", "get/10_basic.yaml");
         assertSingleFile(yamlSuites, "get", "10_basic.yaml");
 
         //extension .yaml is optional
-        yamlSuites = FileUtils.findYamlSuites("/rest-spec/test", "get/10_basic");
+        yamlSuites = FileUtils.findYamlSuites("/rest-api-spec/test", "get/10_basic");
         assertSingleFile(yamlSuites, "get", "10_basic.yaml");
     }
 
     @Test
     public void testLoadMultipleYamlSuites() throws Exception {
         //single directory
-        Map<String,Set<File>> yamlSuites = FileUtils.findYamlSuites("/rest-spec/test", "get");
+        Map<String,Set<File>> yamlSuites = FileUtils.findYamlSuites("/rest-api-spec/test", "get");
         assertThat(yamlSuites, notNullValue());
         assertThat(yamlSuites.size(), equalTo(1));
         assertThat(yamlSuites.containsKey("get"), equalTo(true));
         assertThat(yamlSuites.get("get").size(), greaterThan(1));
 
         //multiple directories
-        yamlSuites = FileUtils.findYamlSuites("/rest-spec/test", "get", "index");
+        yamlSuites = FileUtils.findYamlSuites("/rest-api-spec/test", "get", "index");
         assertThat(yamlSuites, notNullValue());
         assertThat(yamlSuites.size(), equalTo(2));
         assertThat(yamlSuites.containsKey("get"), equalTo(true));
@@ -65,12 +65,12 @@ public class FileUtilsTests extends ElasticsearchTestCase {
         assertThat(yamlSuites.get("index").size(), greaterThan(1));
 
         //multiple paths, which can be both directories or yaml test suites (with optional file extension)
-        yamlSuites = FileUtils.findYamlSuites("/rest-spec/test", "get/10_basic", "index");
+        yamlSuites = FileUtils.findYamlSuites("/rest-api-spec/test", "indices.optimize/10_basic", "index");
         assertThat(yamlSuites, notNullValue());
         assertThat(yamlSuites.size(), equalTo(2));
-        assertThat(yamlSuites.containsKey("get"), equalTo(true));
-        assertThat(yamlSuites.get("get").size(), equalTo(1));
-        assertSingleFile(yamlSuites.get("get"), "get", "10_basic.yaml");
+        assertThat(yamlSuites.containsKey("indices.optimize"), equalTo(true));
+        assertThat(yamlSuites.get("indices.optimize").size(), equalTo(1));
+        assertSingleFile(yamlSuites.get("indices.optimize"), "indices.optimize", "10_basic.yaml");
         assertThat(yamlSuites.containsKey("index"), equalTo(true));
         assertThat(yamlSuites.get("index").size(), greaterThan(1));
 
@@ -80,7 +80,7 @@ public class FileUtilsTests extends ElasticsearchTestCase {
         assertThat(file.createNewFile(), equalTo(true));
 
         //load from directory outside of the classpath
-        yamlSuites = FileUtils.findYamlSuites("/rest-spec/test", "get/10_basic", dir.getAbsolutePath());
+        yamlSuites = FileUtils.findYamlSuites("/rest-api-spec/test", "get/10_basic", dir.getAbsolutePath());
         assertThat(yamlSuites, notNullValue());
         assertThat(yamlSuites.size(), equalTo(2));
         assertThat(yamlSuites.containsKey("get"), equalTo(true));
@@ -90,7 +90,7 @@ public class FileUtilsTests extends ElasticsearchTestCase {
         assertSingleFile(yamlSuites.get(dir.getName()), dir.getName(), file.getName());
 
         //load from external file (optional extension)
-        yamlSuites = FileUtils.findYamlSuites("/rest-spec/test", "get/10_basic", dir.getAbsolutePath() + File.separator + "test_loading");
+        yamlSuites = FileUtils.findYamlSuites("/rest-api-spec/test", "get/10_basic", dir.getAbsolutePath() + File.separator + "test_loading");
         assertThat(yamlSuites, notNullValue());
         assertThat(yamlSuites.size(), equalTo(2));
         assertThat(yamlSuites.containsKey("get"), equalTo(true));

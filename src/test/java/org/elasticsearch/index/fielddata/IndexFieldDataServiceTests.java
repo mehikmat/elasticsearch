@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -29,12 +29,12 @@ import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.index.Index;
 import org.elasticsearch.index.fielddata.plain.*;
-import org.elasticsearch.index.mapper.ContentPath;
-import org.elasticsearch.index.mapper.FieldMapper;
+import org.elasticsearch.index.mapper.*;
 import org.elasticsearch.index.mapper.Mapper.BuilderContext;
-import org.elasticsearch.index.mapper.MapperBuilders;
 import org.elasticsearch.index.mapper.core.*;
+import org.elasticsearch.indices.fielddata.breaker.DummyCircuitBreakerService;
 import org.elasticsearch.test.ElasticsearchTestCase;
+import org.elasticsearch.test.index.service.StubIndexService;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -49,7 +49,9 @@ public class IndexFieldDataServiceTests extends ElasticsearchTestCase {
 
     @SuppressWarnings("unchecked")
     public void testGetForFieldDefaults() {
-        final IndexFieldDataService ifdService = new IndexFieldDataService(new Index("test"));
+        final IndexFieldDataService ifdService = new IndexFieldDataService(new Index("test"), new DummyCircuitBreakerService());
+        MapperService mapperService = MapperTestUtils.newMapperService(ifdService.index(), ImmutableSettings.Builder.EMPTY_SETTINGS);
+        ifdService.setIndexService(new StubIndexService(mapperService));
         for (boolean docValues : Arrays.asList(true, false)) {
             final BuilderContext ctx = new BuilderContext(null, new ContentPath(1));
             final StringFieldMapper stringMapper = new StringFieldMapper.Builder("string").tokenized(false).fieldDataSettings(docValues ? DOC_VALUES_SETTINGS : ImmutableSettings.EMPTY).build(ctx);
@@ -98,7 +100,9 @@ public class IndexFieldDataServiceTests extends ElasticsearchTestCase {
 
     @SuppressWarnings("unchecked")
     public void testByPassDocValues() {
-        final IndexFieldDataService ifdService = new IndexFieldDataService(new Index("test"));
+        final IndexFieldDataService ifdService = new IndexFieldDataService(new Index("test"), new DummyCircuitBreakerService());
+        MapperService mapperService = MapperTestUtils.newMapperService(ifdService.index(), ImmutableSettings.Builder.EMPTY_SETTINGS);
+        ifdService.setIndexService(new StubIndexService(mapperService));
         final BuilderContext ctx = new BuilderContext(null, new ContentPath(1));
         final StringFieldMapper stringMapper = MapperBuilders.stringField("string").tokenized(false).fieldDataSettings(DOC_VALUES_SETTINGS).fieldDataSettings(ImmutableSettings.builder().put("format", "fst").build()).build(ctx);
         ifdService.clear();
@@ -129,7 +133,9 @@ public class IndexFieldDataServiceTests extends ElasticsearchTestCase {
     }
 
     public void testChangeFieldDataFormat() throws Exception {
-        final IndexFieldDataService ifdService = new IndexFieldDataService(new Index("test"));
+        final IndexFieldDataService ifdService = new IndexFieldDataService(new Index("test"), new DummyCircuitBreakerService());
+        MapperService mapperService = MapperTestUtils.newMapperService(ifdService.index(), ImmutableSettings.Builder.EMPTY_SETTINGS);
+        ifdService.setIndexService(new StubIndexService(mapperService));
         final BuilderContext ctx = new BuilderContext(null, new ContentPath(1));
         final StringFieldMapper mapper1 = MapperBuilders.stringField("s").tokenized(false).fieldDataSettings(ImmutableSettings.builder().put(FieldDataType.FORMAT_KEY, "paged_bytes").build()).build(ctx);
         final IndexWriter writer = new IndexWriter(new RAMDirectory(), new IndexWriterConfig(TEST_VERSION_CURRENT, new KeywordAnalyzer()));

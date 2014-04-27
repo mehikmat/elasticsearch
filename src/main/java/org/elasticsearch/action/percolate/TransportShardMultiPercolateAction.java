@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,7 +19,7 @@
 
 package org.elasticsearch.action.percolate;
 
-import org.elasticsearch.ElasticSearchException;
+import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.ExceptionsHelper;
 import org.elasticsearch.action.ActionResponse;
 import org.elasticsearch.action.support.TransportActions;
@@ -87,17 +87,17 @@ public class TransportShardMultiPercolateAction extends TransportShardSingleOper
     }
 
     @Override
-    protected ShardIterator shards(ClusterState state, Request request) throws ElasticSearchException {
+    protected ShardIterator shards(ClusterState state, Request request) throws ElasticsearchException {
         return clusterService.operationRouting().getShards(
                 clusterService.state(), request.index(), request.shardId(), request.preference
         );
     }
 
     @Override
-    protected Response shardOperation(Request request, int shardId) throws ElasticSearchException {
+    protected Response shardOperation(Request request, int shardId) throws ElasticsearchException {
         // TODO: Look into combining the shard req's docs into one in memory index.
         Response response = new Response();
-        response.items = new ArrayList<Response.Item>(request.items.size());
+        response.items = new ArrayList<>(request.items.size());
         for (Request.Item item : request.items) {
             Response.Item responseItem;
             int slot = item.slot;
@@ -105,7 +105,7 @@ public class TransportShardMultiPercolateAction extends TransportShardSingleOper
                 responseItem = new Response.Item(slot, percolatorService.percolate(item.request));
             } catch (Throwable t) {
                 if (TransportActions.isShardNotAvailableException(t)) {
-                    throw (ElasticSearchException) t;
+                    throw (ElasticsearchException) t;
                 } else {
                     logger.debug("[{}][{}] failed to multi percolate", t, request.index(), request.shardId());
                     responseItem = new Response.Item(slot, new StringText(ExceptionsHelper.detailedMessage(t)));
@@ -130,7 +130,7 @@ public class TransportShardMultiPercolateAction extends TransportShardSingleOper
             this.index = concreteIndex;
             this.shardId = shardId;
             this.preference = preference;
-            this.items = new ArrayList<Item>();
+            this.items = new ArrayList<>();
         }
 
         public int shardId() {
@@ -151,7 +151,7 @@ public class TransportShardMultiPercolateAction extends TransportShardSingleOper
             shardId = in.readVInt();
             preference = in.readOptionalString();
             int size = in.readVInt();
-            items = new ArrayList<Item>(size);
+            items = new ArrayList<>(size);
             for (int i = 0; i < size; i++) {
                 int slot = in.readVInt();
                 PercolateShardRequest shardRequest = new PercolateShardRequest(index(), shardId);
@@ -229,7 +229,7 @@ public class TransportShardMultiPercolateAction extends TransportShardSingleOper
         public void readFrom(StreamInput in) throws IOException {
             super.readFrom(in);
             int size = in.readVInt();
-            items = new ArrayList<Item>(size);
+            items = new ArrayList<>(size);
             for (int i = 0; i < size; i++) {
                 int slot = in.readVInt();
                 if (in.readBoolean()) {

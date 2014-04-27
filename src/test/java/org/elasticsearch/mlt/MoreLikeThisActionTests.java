@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -29,6 +29,8 @@ import org.elasticsearch.test.ElasticsearchIntegrationTest;
 import org.junit.Test;
 
 import static org.elasticsearch.client.Requests.*;
+import static org.elasticsearch.cluster.metadata.IndexMetaData.SETTING_NUMBER_OF_REPLICAS;
+import static org.elasticsearch.cluster.metadata.IndexMetaData.SETTING_NUMBER_OF_SHARDS;
 import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
 import static org.elasticsearch.index.query.FilterBuilders.termFilter;
 import static org.elasticsearch.index.query.QueryBuilders.moreLikeThisFieldQuery;
@@ -67,7 +69,7 @@ public class MoreLikeThisActionTests extends ElasticsearchIntegrationTest {
     @Test
     public void testSimpleMoreLikeOnLongField() throws Exception {
         logger.info("Creating index test");
-        createIndex("test");
+        assertAcked(prepareCreate("test").addMapping("type1", "some_long", "type=long"));
         logger.info("Running Cluster Health");
         assertThat(ensureGreen(), equalTo(ClusterHealthStatus.GREEN));
 
@@ -93,8 +95,8 @@ public class MoreLikeThisActionTests extends ElasticsearchIntegrationTest {
                     .startObject("text").field("type", "string").endObject()
                     .endObject().endObject().endObject()));
         logger.info("Creating aliases alias release");
-        client().admin().indices().aliases(indexAliasesRequest().addAlias("test", "release", termFilter("text", "release"))).actionGet();
-        client().admin().indices().aliases(indexAliasesRequest().addAlias("test", "beta", termFilter("text", "beta"))).actionGet();
+        client().admin().indices().aliases(indexAliasesRequest().addAlias("release", termFilter("text", "release"), "test")).actionGet();
+        client().admin().indices().aliases(indexAliasesRequest().addAlias("beta", termFilter("text", "beta"), "test")).actionGet();
 
         logger.info("Running Cluster Health");
         assertThat(ensureGreen(), equalTo(ClusterHealthStatus.GREEN));
@@ -177,10 +179,9 @@ public class MoreLikeThisActionTests extends ElasticsearchIntegrationTest {
                 .startObject("properties")
                 .endObject()
                 .endObject().endObject().string();
-        prepareCreate("foo", 2, ImmutableSettings.builder().put("index.number_of_replicas", 0)
-                .put("index.number_of_shards", 2))
-                .addMapping("bar", mapping)
-                .execute().actionGet();
+        assertAcked(prepareCreate("foo", 2,
+                ImmutableSettings.builder().put(SETTING_NUMBER_OF_SHARDS, 2).put(SETTING_NUMBER_OF_REPLICAS, 0))
+                .addMapping("bar", mapping));
         ensureGreen();
 
         client().prepareIndex("foo", "bar", "1")

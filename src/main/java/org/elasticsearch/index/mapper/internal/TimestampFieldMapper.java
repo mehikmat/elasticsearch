@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -79,7 +79,7 @@ public class TimestampFieldMapper extends DateFieldMapper implements InternalMap
         private FormatDateTimeFormatter dateTimeFormatter = Defaults.DATE_TIME_FORMATTER;
 
         public Builder() {
-            super(Defaults.NAME, new FieldType(Defaults.FIELD_TYPE));
+            super(Defaults.NAME, new FieldType(Defaults.FIELD_TYPE), Defaults.PRECISION_STEP_64_BIT);
         }
 
         public Builder enabled(EnabledAttributeMapper enabledState) {
@@ -104,8 +104,8 @@ public class TimestampFieldMapper extends DateFieldMapper implements InternalMap
                 Settings settings = context.indexSettings();
                 roundCeil =  settings.getAsBoolean("index.mapping.date.round_ceil", settings.getAsBoolean("index.mapping.date.parse_upper_inclusive", Defaults.ROUND_CEIL));
             }
-            return new TimestampFieldMapper(fieldType, enabledState, path, dateTimeFormatter, roundCeil,
-                    ignoreMalformed(context), postingsProvider, docValuesProvider, fieldDataSettings, context.indexSettings());
+            return new TimestampFieldMapper(fieldType, docValues, enabledState, path, dateTimeFormatter, roundCeil,
+                    ignoreMalformed(context), coerce(context), postingsProvider, docValuesProvider, normsLoading, fieldDataSettings, context.indexSettings());
         }
     }
 
@@ -136,19 +136,20 @@ public class TimestampFieldMapper extends DateFieldMapper implements InternalMap
     private final String path;
 
     public TimestampFieldMapper() {
-        this(new FieldType(Defaults.FIELD_TYPE), Defaults.ENABLED, Defaults.PATH, Defaults.DATE_TIME_FORMATTER,
-                Defaults.ROUND_CEIL, Defaults.IGNORE_MALFORMED, null, null, null, ImmutableSettings.EMPTY);
+        this(new FieldType(Defaults.FIELD_TYPE), null, Defaults.ENABLED, Defaults.PATH, Defaults.DATE_TIME_FORMATTER,
+                Defaults.ROUND_CEIL, Defaults.IGNORE_MALFORMED, Defaults.COERCE, null, null, null, null, ImmutableSettings.EMPTY);
     }
 
-    protected TimestampFieldMapper(FieldType fieldType, EnabledAttributeMapper enabledState, String path,
+    protected TimestampFieldMapper(FieldType fieldType, Boolean docValues, EnabledAttributeMapper enabledState, String path,
                                    FormatDateTimeFormatter dateTimeFormatter, boolean roundCeil,
-                                   Explicit<Boolean> ignoreMalformed, PostingsFormatProvider postingsProvider,
-                                   DocValuesFormatProvider docValuesProvider, @Nullable Settings fieldDataSettings,
-                                   Settings indexSettings) {
+                                   Explicit<Boolean> ignoreMalformed,Explicit<Boolean> coerce, PostingsFormatProvider postingsProvider,
+                                   DocValuesFormatProvider docValuesProvider, Loading normsLoading,
+                                   @Nullable Settings fieldDataSettings, Settings indexSettings) {
         super(new Names(Defaults.NAME, Defaults.NAME, Defaults.NAME, Defaults.NAME), dateTimeFormatter,
-                Defaults.PRECISION_STEP, Defaults.BOOST, fieldType,
+                Defaults.PRECISION_STEP_64_BIT, Defaults.BOOST, fieldType, docValues,
                 Defaults.NULL_VALUE, TimeUnit.MILLISECONDS /*always milliseconds*/,
-                roundCeil, ignoreMalformed, postingsProvider, docValuesProvider, null, fieldDataSettings, indexSettings);
+                roundCeil, ignoreMalformed, coerce, postingsProvider, docValuesProvider, null, normsLoading, fieldDataSettings, 
+                indexSettings, MultiFields.empty(), null);
         this.enabledState = enabledState;
         this.path = path;
     }

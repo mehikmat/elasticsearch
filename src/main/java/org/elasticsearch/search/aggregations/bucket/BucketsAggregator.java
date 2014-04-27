@@ -1,13 +1,13 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,10 +16,9 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.search.aggregations.bucket;
 
-import org.elasticsearch.common.util.BigArrays;
+import org.elasticsearch.common.lease.Releasable;
 import org.elasticsearch.common.util.LongArray;
 import org.elasticsearch.search.aggregations.Aggregator;
 import org.elasticsearch.search.aggregations.AggregatorFactories;
@@ -28,38 +27,70 @@ import org.elasticsearch.search.aggregations.InternalAggregations;
 import org.elasticsearch.search.aggregations.support.AggregationContext;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  *
  */
 public abstract class BucketsAggregator extends Aggregator {
 
-    protected LongArray docCounts;
+    private LongArray docCounts;
+
+    private final Aggregator[] collectableSugAggregators;
 
     public BucketsAggregator(String name, BucketAggregationMode bucketAggregationMode, AggregatorFactories factories,
                              long estimatedBucketsCount, AggregationContext context, Aggregator parent) {
         super(name, bucketAggregationMode, factories, estimatedBucketsCount, context, parent);
-        docCounts = BigArrays.newLongArray(estimatedBucketsCount);
+        docCounts = bigArrays.newLongArray(estimatedBucketsCount, true);
+        List<Aggregator> collectables = new ArrayList<>(subAggregators.length);
+        for (int i = 0; i < subAggregators.length; i++) {
+            if (subAggregators[i].shouldCollect()) {
+                collectables.add((subAggregators[i]));
+            }
+        }
+        collectableSugAggregators = collectables.toArray(new Aggregator[collectables.size()]);
+    }
+
+    /**
+     * Return an upper bound of the maximum bucket ordinal seen so far.
+     */
+    protected final long maxBucketOrd() {
+        return docCounts.size();
     }
 
     /**
      * Utility method to collect the given doc in the given bucket (identified by the bucket ordinal)
      */
     protected final void collectBucket(int doc, long bucketOrd) throws IOException {
-        docCounts = BigArrays.grow(docCounts, bucketOrd + 1);
+        docCounts = bigArrays.grow(docCounts, bucketOrd + 1);
+        collectExistingBucket(doc, bucketOrd);
+    }
+
+    /**
+     * Same as {@link #collectBucket(int, long)}, but doesn't check if the docCounts needs to be re-sized.
+     */
+    protected final void collectExistingBucket(int doc, long bucketOrd) throws IOException {
         docCounts.increment(bucketOrd, 1);
-        for (int i = 0; i < subAggregators.length; i++) {
-            subAggregators[i].collect(doc, bucketOrd);
+        for (int i = 0; i < collectableSugAggregators.length; i++) {
+            collectableSugAggregators[i].collect(doc, bucketOrd);
         }
+    }
+
+    /**
+     * Initializes the docCounts to the specified size.
+     */
+    public void initializeDocCounts(long maxOrd) {
+        docCounts = bigArrays.grow(docCounts, maxOrd);
     }
 
     /**
      * Utility method to collect the given doc in the given bucket but not to update the doc counts of the bucket
      */
     protected final void collectBucketNoCounts(int doc, long bucketOrd) throws IOException {
-        for (int i = 0; i < subAggregators.length; i++) {
-            subAggregators[i].collect(doc, bucketOrd);
+        for (int i = 0; i < collectableSugAggregators.length; i++) {
+            collectableSugAggregators[i].collect(doc, bucketOrd);
         }
     }
 
@@ -67,14 +98,14 @@ public abstract class BucketsAggregator extends Aggregator {
      * Utility method to increment the doc counts of the given bucket (identified by the bucket ordinal)
      */
     protected final void incrementBucketDocCount(int inc, long bucketOrd) throws IOException {
-        docCounts = BigArrays.grow(docCounts, bucketOrd + 1);
+        docCounts = bigArrays.grow(docCounts, bucketOrd + 1);
         docCounts.increment(bucketOrd, inc);
     }
 
     /**
      * Utility method to return the number of documents that fell in the given bucket (identified by the bucket ordinal)
      */
-    protected final long bucketDocCount(long bucketOrd) {
+    public final long bucketDocCount(long bucketOrd) {
         if (bucketOrd >= docCounts.size()) {
             // This may happen eg. if no document in the highest buckets is accepted by a sub aggregator.
             // For example, if there is a long terms agg on 3 terms 1,2,3 with a sub filter aggregator and if no document with 3 as a value
@@ -98,6 +129,24 @@ public abstract class BucketsAggregator extends Aggregator {
                     : subAggregators[i].buildAggregation(bucketOrd);
         }
         return new InternalAggregations(Arrays.asList(aggregations));
+    }
+
+    /**
+     * Utility method to build empty aggregations of the sub aggregators.
+     */
+    protected final InternalAggregations bucketEmptyAggregations() {
+        final InternalAggregation[] aggregations = new InternalAggregation[subAggregators.length];
+        for (int i = 0; i < subAggregators.length; i++) {
+            aggregations[i] = subAggregators[i].buildEmptyAggregation();
+        }
+        return new InternalAggregations(Arrays.asList(aggregations));
+    }
+
+    @Override
+    public final void close() {
+        try (Releasable releasable = docCounts) {
+            super.close();
+        }
     }
 
 }

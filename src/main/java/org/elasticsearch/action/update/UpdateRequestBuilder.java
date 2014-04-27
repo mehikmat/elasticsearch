@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -78,6 +78,12 @@ public class UpdateRequestBuilder extends InstanceShardOperationRequestBuilder<U
     /**
      * The script to execute. Note, make sure not to send different script each times and instead
      * use script params if possible with the same (automatically compiled) script.
+     * <p>
+     * The script works with the variable <code>ctx</code>, which is bound to the entry, 
+     * e.g. <code>ctx._source.mycounter += 1</code>.
+     * 
+     * @see #setScriptLang(String)
+     * @see #setScriptParams(Map)
      */
     public UpdateRequestBuilder setScript(String script) {
         request.script(script);
@@ -86,6 +92,10 @@ public class UpdateRequestBuilder extends InstanceShardOperationRequestBuilder<U
 
     /**
      * The language of the script to execute.
+     * Valid options are: mvel, js, groovy, python, and native (Java)<br>
+     * Default: mvel
+     * <p>
+     * Ref: http://www.elasticsearch.org/guide/en/elasticsearch/reference/current/modules-scripting.html
      */
     public UpdateRequestBuilder setScriptLang(String scriptLang) {
         request.scriptLang(scriptLang);

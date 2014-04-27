@@ -1,12 +1,11 @@
-package org.elasticsearch.cluster;
 /*
- * Licensed to ElasticSearch under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -18,8 +17,9 @@ package org.elasticsearch.cluster;
  * under the License.
  */
 
+package org.elasticsearch.cluster;
 
-import org.elasticsearch.ElasticSearchException;
+import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthResponse;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthStatus;
 import org.elasticsearch.action.admin.cluster.health.ClusterIndexHealth;
@@ -124,7 +124,7 @@ public class ClusterHealthResponsesTests extends ElasticsearchTestCase {
             case RELOCATING:
                 return new MutableShardRouting(index, shardId, "node_" + Integer.toString(node_id++), "node_" + Integer.toString(node_id++), primary, ShardRoutingState.RELOCATING, 1);
             default:
-                throw new ElasticSearchException("Unknown state: " + state.name());
+                throw new ElasticsearchException("Unknown state: " + state.name());
         }
 
     }
@@ -187,7 +187,7 @@ public class ClusterHealthResponsesTests extends ElasticsearchTestCase {
             metaData.put(indexMetaData, true);
             routingTable.add(indexRoutingTable);
         }
-        ClusterState clusterState = ClusterState.builder().metaData(metaData).routingTable(routingTable).build();
+        ClusterState clusterState = ClusterState.builder(ClusterName.DEFAULT).metaData(metaData).routingTable(routingTable).build();
         ClusterHealthResponse clusterHealth = new ClusterHealthResponse("bla", clusterState.metaData().concreteIndices(null), clusterState);
         logger.info("cluster status: {}, expected {}", clusterHealth.getStatus(), counter.status());
 
@@ -208,7 +208,7 @@ public class ClusterHealthResponsesTests extends ElasticsearchTestCase {
         MetaData.Builder metaData = MetaData.builder();
         metaData.put(indexMetaData, true);
         routingTable.add(indexRoutingTable);
-        ClusterState clusterState = ClusterState.builder().metaData(metaData).routingTable(routingTable).build();
+        ClusterState clusterState = ClusterState.builder(ClusterName.DEFAULT).metaData(metaData).routingTable(routingTable).build();
         ClusterHealthResponse clusterHealth = new ClusterHealthResponse("bla", clusterState.metaData().concreteIndices(null), clusterState);
         // currently we have no cluster level validation failures as index validation issues are reported per index.
         assertThat(clusterHealth.getValidationFailures(), Matchers.hasSize(0));

@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,10 +19,10 @@
 
 package org.elasticsearch.index.engine;
 
-import org.elasticsearch.Version;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.io.stream.Streamable;
+import org.elasticsearch.common.unit.ByteSizeValue;
 import org.elasticsearch.common.xcontent.ToXContent;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentBuilderString;
@@ -50,8 +50,7 @@ public class SegmentsStats implements Streamable, ToXContent {
         if (mergeStats == null) {
             return;
         }
-        this.count += mergeStats.count;
-        this.memoryInBytes += mergeStats.memoryInBytes;
+        add(mergeStats.count, mergeStats.memoryInBytes);
     }
 
     /**
@@ -66,6 +65,10 @@ public class SegmentsStats implements Streamable, ToXContent {
      */
     public long getMemoryInBytes() {
         return this.memoryInBytes;
+    }
+
+    public ByteSizeValue getMemory() {
+        return new ByteSizeValue(memoryInBytes);
     }
 
     public static SegmentsStats readSegmentsStats(StreamInput in) throws IOException {
@@ -93,16 +96,12 @@ public class SegmentsStats implements Streamable, ToXContent {
     @Override
     public void readFrom(StreamInput in) throws IOException {
         count = in.readVLong();
-        if (in.getVersion().after(Version.V_0_90_8)) {
-            memoryInBytes = in.readLong();
-        }
+        memoryInBytes = in.readLong();
     }
 
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         out.writeVLong(count);
-        if (out.getVersion().after(Version.V_0_90_8)) {
-            out.writeLong(memoryInBytes);
-        }
+        out.writeLong(memoryInBytes);
     }
 }

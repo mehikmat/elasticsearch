@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -20,7 +20,7 @@
 package org.elasticsearch.action.termvector;
 
 import com.google.common.collect.Sets;
-import org.elasticsearch.ElasticSearchParseException;
+import org.elasticsearch.ElasticsearchParseException;
 import org.elasticsearch.action.ActionRequestValidationException;
 import org.elasticsearch.action.ValidateActions;
 import org.elasticsearch.action.support.single.shard.SingleShardOperationRequest;
@@ -81,12 +81,20 @@ public class TermVectorRequest extends SingleShardOperationRequest<TermVectorReq
         this.preference = other.preference();
         this.routing = other.routing();
         if (other.selectedFields != null) {
-            this.selectedFields = new HashSet<String>(other.selectedFields);
+            this.selectedFields = new HashSet<>(other.selectedFields);
         }
     }
 
     public EnumSet<Flag> getFlags() {
         return flagsEnum;
+    }
+
+    /**
+     * Sets the type of document to get the term vector for.
+     */
+    public TermVectorRequest type(String type) {
+        this.type = type;
+        return this;
     }
 
     /**
@@ -106,8 +114,9 @@ public class TermVectorRequest extends SingleShardOperationRequest<TermVectorReq
     /**
      * Sets the id of document the term vector is requested for.
      */
-    public void id(String id) {
+    public TermVectorRequest id(String id) {
         this.id = id;
+        return this;
     }
 
     /**
@@ -117,8 +126,9 @@ public class TermVectorRequest extends SingleShardOperationRequest<TermVectorReq
         return routing;
     }
 
-    public void routing(String routing) {
+    public TermVectorRequest routing(String routing) {
         this.routing = routing;
+        return this;
     }
 
     /**
@@ -295,7 +305,7 @@ public class TermVectorRequest extends SingleShardOperationRequest<TermVectorReq
         }
         int numSelectedFields = in.readVInt();
         if (numSelectedFields > 0) {
-            selectedFields = new HashSet<String>();
+            selectedFields = new HashSet<>();
             for (int i = 0; i < numSelectedFields; i++) {
                 selectedFields.add(in.readString());
             }
@@ -342,7 +352,7 @@ public class TermVectorRequest extends SingleShardOperationRequest<TermVectorReq
     public static void parseRequest(TermVectorRequest termVectorRequest, XContentParser parser) throws IOException {
         XContentParser.Token token;
         String currentFieldName = null;
-        List<String> fields = new ArrayList<String>();
+        List<String> fields = new ArrayList<>();
         while ((token = parser.nextToken()) != XContentParser.Token.END_OBJECT) {
             if (token == XContentParser.Token.FIELD_NAME) {
                 currentFieldName = parser.currentName();
@@ -354,7 +364,7 @@ public class TermVectorRequest extends SingleShardOperationRequest<TermVectorReq
                             fields.add(parser.text());
                         }
                     } else {
-                        throw new ElasticSearchParseException(
+                        throw new ElasticsearchParseException(
                                 "The parameter fields must be given as an array! Use syntax : \"fields\" : [\"field1\", \"field2\",...]");
                     }
                 } else if (currentFieldName.equals("offsets")) {
@@ -376,7 +386,7 @@ public class TermVectorRequest extends SingleShardOperationRequest<TermVectorReq
                 } else if ("_routing".equals(currentFieldName) || "routing".equals(currentFieldName)) {
                     termVectorRequest.routing = parser.text();
                 } else {
-                    throw new ElasticSearchParseException("The parameter " + currentFieldName
+                    throw new ElasticsearchParseException("The parameter " + currentFieldName
                             + " is not valid for term vector request!");
                 }
             }

@@ -1,13 +1,11 @@
-package org.elasticsearch.action.termvector;
-
 /*
- * Licensed to ElasticSearch under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,8 +17,10 @@ package org.elasticsearch.action.termvector;
  * under the License.
  */
 
-import org.elasticsearch.ElasticSearchIllegalArgumentException;
-import org.elasticsearch.ElasticSearchParseException;
+package org.elasticsearch.action.termvector;
+
+import org.elasticsearch.ElasticsearchIllegalArgumentException;
+import org.elasticsearch.ElasticsearchParseException;
 import org.elasticsearch.action.ActionRequest;
 import org.elasticsearch.action.ActionRequestValidationException;
 import org.elasticsearch.action.ValidateActions;
@@ -30,15 +30,20 @@ import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.common.xcontent.XContentParser;
+import org.elasticsearch.rest.RestRequest;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class MultiTermVectorsRequest extends ActionRequest<MultiTermVectorsRequest> {
 
     String preference;
-    List<TermVectorRequest> requests = new ArrayList<TermVectorRequest>();
+    List<TermVectorRequest> requests = new ArrayList<>();
+
+    final Set<String> ids = new HashSet<>();
 
     public MultiTermVectorsRequest add(TermVectorRequest termVectorRequest) {
         requests.add(termVectorRequest);
@@ -70,57 +75,53 @@ public class MultiTermVectorsRequest extends ActionRequest<MultiTermVectorsReque
 
     public void add(TermVectorRequest template, BytesReference data)
             throws Exception {
-        XContentParser parser = XContentFactory.xContent(data).createParser(data);
-        try {
-            XContentParser.Token token;
-            String currentFieldName = null;
-            List<String> ids = null;
-            while ((token = parser.nextToken()) != XContentParser.Token.END_OBJECT) {
-                if (token == XContentParser.Token.FIELD_NAME) {
-                    currentFieldName = parser.currentName();
-                } else if (token == XContentParser.Token.START_ARRAY) {
 
-                    if ("docs".equals(currentFieldName)) {
-                        while ((token = parser.nextToken()) != XContentParser.Token.END_ARRAY) {
-                            if (token != XContentParser.Token.START_OBJECT) {
-                                throw new ElasticSearchIllegalArgumentException("docs array element should include an object");
+        XContentParser.Token token;
+        String currentFieldName = null;
+        if (data.length() > 0) {
+            try (XContentParser parser = XContentFactory.xContent(data).createParser(data)) {
+                while ((token = parser.nextToken()) != XContentParser.Token.END_OBJECT) {
+                    if (token == XContentParser.Token.FIELD_NAME) {
+                        currentFieldName = parser.currentName();
+                    } else if (token == XContentParser.Token.START_ARRAY) {
+
+                        if ("docs".equals(currentFieldName)) {
+                            while ((token = parser.nextToken()) != XContentParser.Token.END_ARRAY) {
+                                if (token != XContentParser.Token.START_OBJECT) {
+                                    throw new ElasticsearchIllegalArgumentException("docs array element should include an object");
+                                }
+                                TermVectorRequest termVectorRequest = new TermVectorRequest(template);
+                                TermVectorRequest.parseRequest(termVectorRequest, parser);
+                                add(termVectorRequest);
                             }
-                            TermVectorRequest termVectorRequest = new TermVectorRequest(template);
-                            TermVectorRequest.parseRequest(termVectorRequest, parser);
-                            add(termVectorRequest);
-                        }
-                    } else if ("ids".equals(currentFieldName)) {
-                        ids = new ArrayList<String>();
-                        while ((token = parser.nextToken()) != XContentParser.Token.END_ARRAY) {
-                            if (!token.isValue()) {
-                                throw new ElasticSearchIllegalArgumentException("ids array element should only contain ids");
+                        } else if ("ids".equals(currentFieldName)) {
+                            while ((token = parser.nextToken()) != XContentParser.Token.END_ARRAY) {
+                                if (!token.isValue()) {
+                                    throw new ElasticsearchIllegalArgumentException("ids array element should only contain ids");
+                                }
+                                ids.add(parser.text());
                             }
-                            ids.add(parser.text());
+                        } else {
+                            throw new ElasticsearchParseException(
+                                    "No parameter named " + currentFieldName + "and type ARRAY");
                         }
-                    } else {
-                        throw new ElasticSearchParseException(
-                                "No parameter named " + currentFieldName + "and type ARRAY");
+                    } else if (token == XContentParser.Token.START_OBJECT && currentFieldName != null) {
+                        if ("parameters".equals(currentFieldName)) {
+                            TermVectorRequest.parseRequest(template, parser);
+                        } else {
+                            throw new ElasticsearchParseException(
+                                    "No parameter named " + currentFieldName + "and type OBJECT");
+                        }
+                    } else if (currentFieldName != null) {
+                        throw new ElasticsearchParseException("_mtermvectors: Parameter " + currentFieldName + "not supported");
                     }
-                } else if (token == XContentParser.Token.START_OBJECT && currentFieldName != null) {
-                    if ("parameters".equals(currentFieldName)) {
-                        TermVectorRequest.parseRequest(template, parser);
-                    } else {
-                        throw new ElasticSearchParseException(
-                                "No parameter named " + currentFieldName + "and type OBJECT");
-                    }
-                } else if (currentFieldName != null) {
-                    throw new ElasticSearchParseException("_mtermvectors: Parameter " + currentFieldName + "not supported");
                 }
             }
-            if (ids != null) {
-                for (String id : ids) {
-                    TermVectorRequest curRequest = new TermVectorRequest(template);
-                    curRequest.id(id);
-                    requests.add(curRequest);
-                }
-            }
-        } finally {
-            parser.close();
+        }
+        for (String id : ids) {
+            TermVectorRequest curRequest = new TermVectorRequest(template);
+            curRequest.id(id);
+            requests.add(curRequest);
         }
     }
 
@@ -129,7 +130,7 @@ public class MultiTermVectorsRequest extends ActionRequest<MultiTermVectorsReque
         super.readFrom(in);
         preference = in.readOptionalString();
         int size = in.readVInt();
-        requests = new ArrayList<TermVectorRequest>(size);
+        requests = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
             requests.add(TermVectorRequest.readTermVectorRequest(in));
         }
@@ -142,6 +143,12 @@ public class MultiTermVectorsRequest extends ActionRequest<MultiTermVectorsReque
         out.writeVInt(requests.size());
         for (TermVectorRequest termVectorRequest : requests) {
             termVectorRequest.writeTo(out);
+        }
+    }
+
+    public void ids(String[] ids) {
+        for (String id : ids) {
+            this.ids.add(id.replaceAll("\\s", ""));
         }
     }
 }

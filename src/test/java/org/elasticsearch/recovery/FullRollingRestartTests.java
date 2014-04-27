@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -25,9 +25,8 @@ import org.elasticsearch.action.admin.cluster.health.ClusterHealthResponse;
 import org.elasticsearch.common.Priority;
 import org.elasticsearch.common.collect.MapBuilder;
 import org.elasticsearch.test.ElasticsearchIntegrationTest;
-import org.elasticsearch.test.junit.annotations.TestLogging;
 import org.elasticsearch.test.ElasticsearchIntegrationTest.ClusterScope;
-import org.elasticsearch.test.ElasticsearchIntegrationTest.Scope;
+import org.elasticsearch.test.junit.annotations.TestLogging;
 import org.junit.Test;
 
 import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
@@ -36,7 +35,7 @@ import static org.elasticsearch.test.hamcrest.ElasticsearchAssertions.assertHitC
 /**
  *
  */
-@ClusterScope(scope = Scope.TEST, numNodes = 0, transportClientRatio = 0.0)
+@ClusterScope(scope = ElasticsearchIntegrationTest.Scope.TEST, numNodes = 0, transportClientRatio = 0.0)
 public class FullRollingRestartTests extends ElasticsearchIntegrationTest {
 
     protected void assertTimeout(ClusterHealthRequestBuilder requestBuilder) {
@@ -45,7 +44,11 @@ public class FullRollingRestartTests extends ElasticsearchIntegrationTest {
             logger.info("cluster health request timed out:\n{}", clusterHealth);
             fail("cluster health request timed out");
         }
+    }
 
+    @Override
+    protected int numberOfReplicas() {
+        return 1;
     }
 
     @Test
@@ -59,27 +62,28 @@ public class FullRollingRestartTests extends ElasticsearchIntegrationTest {
             client().prepareIndex("test", "type1", Long.toString(i))
                     .setSource(MapBuilder.<String, Object>newMapBuilder().put("test", "value" + i).map()).execute().actionGet();
         }
-        client().admin().indices().prepareFlush().execute().actionGet();
+        flush();
         for (int i = 1000; i < 2000; i++) {
             client().prepareIndex("test", "type1", Long.toString(i))
                     .setSource(MapBuilder.<String, Object>newMapBuilder().put("test", "value" + i).map()).execute().actionGet();
         }
 
         // now start adding nodes
-        cluster().startNode();
-        cluster().startNode();
+        cluster().startNodesAsync(2).get();
 
         // make sure the cluster state is green, and all has been recovered
         assertTimeout(client().admin().cluster().prepareHealth().setWaitForEvents(Priority.LANGUID).setTimeout("1m").setWaitForGreenStatus().setWaitForRelocatingShards(0).setWaitForNodes("3"));
 
         // now start adding nodes
-        cluster().startNode();
-        cluster().startNode();
+        cluster().startNodesAsync(2).get();
+
+        // We now have 5 nodes
+        setMinimumMasterNodes(3);
 
         // make sure the cluster state is green, and all has been recovered
         assertTimeout(client().admin().cluster().prepareHealth().setWaitForEvents(Priority.LANGUID).setTimeout("1m").setWaitForGreenStatus().setWaitForRelocatingShards(0).setWaitForNodes("5"));
 
-        client().admin().indices().prepareRefresh().execute().actionGet();
+        refresh();
         for (int i = 0; i < 10; i++) {
             assertHitCount(client().prepareCount().setQuery(matchAllQuery()).get(), 2000l);
         }
@@ -88,25 +92,32 @@ public class FullRollingRestartTests extends ElasticsearchIntegrationTest {
         cluster().stopRandomNode();
         // make sure the cluster state is green, and all has been recovered
         assertTimeout(client().admin().cluster().prepareHealth().setWaitForEvents(Priority.LANGUID).setTimeout("1m").setWaitForGreenStatus().setWaitForRelocatingShards(0).setWaitForNodes("4"));
+
+        // going down to 3 nodes. note that the min_master_node may not be in effect when we shutdown the 4th
+        // node, but that's OK as it is set to 3 before.
+        setMinimumMasterNodes(2);
         cluster().stopRandomNode();
         // make sure the cluster state is green, and all has been recovered
         assertTimeout(client().admin().cluster().prepareHealth().setWaitForEvents(Priority.LANGUID).setTimeout("1m").setWaitForGreenStatus().setWaitForRelocatingShards(0).setWaitForNodes("3"));
 
-
-        client().admin().indices().prepareRefresh().execute().actionGet();
+        refresh();
         for (int i = 0; i < 10; i++) {
             assertHitCount(client().prepareCount().setQuery(matchAllQuery()).get(), 2000l);
         }
 
+        // closing the 3rd node
         cluster().stopRandomNode();
         // make sure the cluster state is green, and all has been recovered
         assertTimeout(client().admin().cluster().prepareHealth().setWaitForEvents(Priority.LANGUID).setTimeout("1m").setWaitForGreenStatus().setWaitForRelocatingShards(0).setWaitForNodes("2"));
+
+        // closing the 2nd node
+        setMinimumMasterNodes(1);
         cluster().stopRandomNode();
 
         // make sure the cluster state is green, and all has been recovered
         assertTimeout(client().admin().cluster().prepareHealth().setWaitForEvents(Priority.LANGUID).setTimeout("1m").setWaitForYellowStatus().setWaitForRelocatingShards(0).setWaitForNodes("1"));
 
-        client().admin().indices().prepareRefresh().execute().actionGet();
+        refresh();
         for (int i = 0; i < 10; i++) {
             assertHitCount(client().prepareCount().setQuery(matchAllQuery()).get(), 2000l);
         }

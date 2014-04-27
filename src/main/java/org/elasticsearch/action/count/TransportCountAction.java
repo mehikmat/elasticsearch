@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,13 +19,14 @@
 
 package org.elasticsearch.action.count;
 
-import org.elasticsearch.ElasticSearchException;
+import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.ShardOperationFailedException;
 import org.elasticsearch.action.support.DefaultShardOperationFailedException;
 import org.elasticsearch.action.support.broadcast.BroadcastShardOperationFailedException;
 import org.elasticsearch.action.support.broadcast.TransportBroadcastOperationAction;
 import org.elasticsearch.cache.recycler.CacheRecycler;
+import org.elasticsearch.cache.recycler.PageCacheRecycler;
 import org.elasticsearch.cluster.ClusterService;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.block.ClusterBlockException;
@@ -36,6 +37,7 @@ import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.lucene.Lucene;
 import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.common.util.BigArrays;
 import org.elasticsearch.index.query.QueryParseContext;
 import org.elasticsearch.index.service.IndexService;
 import org.elasticsearch.index.shard.service.IndexShard;
@@ -67,13 +69,20 @@ public class TransportCountAction extends TransportBroadcastOperationAction<Coun
 
     private final CacheRecycler cacheRecycler;
 
+    private final PageCacheRecycler pageCacheRecycler;
+
+    private final BigArrays bigArrays;
+
     @Inject
     public TransportCountAction(Settings settings, ThreadPool threadPool, ClusterService clusterService, TransportService transportService,
-                                IndicesService indicesService, ScriptService scriptService, CacheRecycler cacheRecycler) {
+                                IndicesService indicesService, ScriptService scriptService, CacheRecycler cacheRecycler,
+                                PageCacheRecycler pageCacheRecycler, BigArrays bigArrays) {
         super(settings, threadPool, clusterService, transportService);
         this.indicesService = indicesService;
         this.scriptService = scriptService;
         this.cacheRecycler = cacheRecycler;
+        this.pageCacheRecycler = pageCacheRecycler;
+        this.bigArrays = bigArrays;
     }
 
     @Override
@@ -154,7 +163,7 @@ public class TransportCountAction extends TransportBroadcastOperationAction<Coun
     }
 
     @Override
-    protected ShardCountResponse shardOperation(ShardCountRequest request) throws ElasticSearchException {
+    protected ShardCountResponse shardOperation(ShardCountRequest request) throws ElasticsearchException {
         IndexService indexService = indicesService.indexServiceSafe(request.index());
         IndexShard indexShard = indexService.shardSafe(request.shardId());
 
@@ -164,7 +173,7 @@ public class TransportCountAction extends TransportBroadcastOperationAction<Coun
                         .filteringAliases(request.filteringAliases())
                         .nowInMillis(request.nowInMillis()),
                 shardTarget, indexShard.acquireSearcher("count"), indexService, indexShard,
-                scriptService, cacheRecycler);
+                scriptService, cacheRecycler, pageCacheRecycler, bigArrays);
         SearchContext.setCurrent(context);
 
         try {
@@ -172,11 +181,11 @@ public class TransportCountAction extends TransportBroadcastOperationAction<Coun
             if (request.minScore() != -1) {
                 context.minimumScore(request.minScore());
             }
-            BytesReference querySource = request.querySource();
-            if (querySource != null && querySource.length() > 0) {
+            BytesReference source = request.querySource();
+            if (source != null && source.length() > 0) {
                 try {
                     QueryParseContext.setTypes(request.types());
-                    context.parsedQuery(indexService.queryParserService().parse(querySource));
+                    context.parsedQuery(indexService.queryParserService().parseQuery(source));
                 } finally {
                     QueryParseContext.removeTypes();
                 }
@@ -190,7 +199,7 @@ public class TransportCountAction extends TransportBroadcastOperationAction<Coun
             }
         } finally {
             // this will also release the index searcher
-            context.release();
+            context.close();
             SearchContext.removeCurrent();
         }
     }

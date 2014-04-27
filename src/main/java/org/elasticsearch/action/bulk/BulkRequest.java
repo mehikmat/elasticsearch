@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -20,8 +20,7 @@
 package org.elasticsearch.action.bulk;
 
 import com.google.common.collect.Lists;
-import org.elasticsearch.ElasticSearchIllegalArgumentException;
-import org.elasticsearch.Version;
+import org.elasticsearch.ElasticsearchIllegalArgumentException;
 import org.elasticsearch.action.ActionRequest;
 import org.elasticsearch.action.ActionRequestValidationException;
 import org.elasticsearch.action.WriteConsistencyLevel;
@@ -89,7 +88,7 @@ public class BulkRequest extends ActionRequest<BulkRequest> {
         } else if (request instanceof UpdateRequest) {
             add((UpdateRequest) request, payload);
         } else {
-            throw new ElasticSearchIllegalArgumentException("No support for request [" + request + "]");
+            throw new ElasticsearchIllegalArgumentException("No support for request [" + request + "]");
         }
         return this;
     }
@@ -104,7 +103,7 @@ public class BulkRequest extends ActionRequest<BulkRequest> {
             } else if (request instanceof DeleteRequest) {
                 add((DeleteRequest) request);
             } else {
-                throw new ElasticSearchIllegalArgumentException("No support for request [" + request + "]");
+                throw new ElasticsearchIllegalArgumentException("No support for request [" + request + "]");
             }
         }
         return this;
@@ -178,7 +177,7 @@ public class BulkRequest extends ActionRequest<BulkRequest> {
             if (payload == null) {
                 return;
             }
-            payloads = new ArrayList<Object>(requests.size() + 10);
+            payloads = new ArrayList<>(requests.size() + 10);
             // add requests#size-1 elements to the payloads if it null (we add for an *existing* request)
             for (int i = 1; i < requests.size(); i++) {
                 payloads.add(null);
@@ -258,9 +257,8 @@ public class BulkRequest extends ActionRequest<BulkRequest> {
                 break;
             }
             // now parse the action
-            XContentParser parser = xContent.createParser(data.slice(from, nextMarker - from));
 
-            try {
+            try (XContentParser parser = xContent.createParser(data.slice(from, nextMarker - from))) {
                 // move pointers
                 from = nextMarker + 1;
 
@@ -297,7 +295,7 @@ public class BulkRequest extends ActionRequest<BulkRequest> {
                     } else if (token.isValue()) {
                         if ("_index".equals(currentFieldName)) {
                             if (!allowExplicitIndex) {
-                                throw new ElasticSearchIllegalArgumentException("explicit index in bulk is not allowed");
+                                throw new ElasticsearchIllegalArgumentException("explicit index in bulk is not allowed");
                             }
                             index = parser.text();
                         } else if ("_type".equals(currentFieldName)) {
@@ -339,9 +337,6 @@ public class BulkRequest extends ActionRequest<BulkRequest> {
                     // we use internalAdd so we don't fork here, this allows us not to copy over the big byte array to small chunks
                     // of index request. All index requests are still unsafe if applicable.
                     if ("index".equals(action)) {
-                        if (!allowExplicitIndex) {
-                            throw new ElasticSearchIllegalArgumentException("explicit index in bulk is not allowed");
-                        }
                         if (opType == null) {
                             internalAdd(new IndexRequest(index, type, id).routing(routing).parent(parent).timestamp(timestamp).ttl(ttl).version(version).versionType(versionType)
                                     .source(data.slice(from, nextMarker - from), contentUnsafe), payload);
@@ -383,8 +378,6 @@ public class BulkRequest extends ActionRequest<BulkRequest> {
                     // move pointers
                     from = nextMarker + 1;
                 }
-            } finally {
-                parser.close();
             }
         }
         return this;
@@ -498,9 +491,7 @@ public class BulkRequest extends ActionRequest<BulkRequest> {
             }
         }
         refresh = in.readBoolean();
-        if (in.getVersion().after(Version.V_0_90_7)) {
-            timeout = TimeValue.readTimeValue(in);
-        }
+        timeout = TimeValue.readTimeValue(in);
     }
 
     @Override
@@ -520,8 +511,6 @@ public class BulkRequest extends ActionRequest<BulkRequest> {
             request.writeTo(out);
         }
         out.writeBoolean(refresh);
-        if (out.getVersion().after(Version.V_0_90_7)) {
-            timeout.writeTo(out);
-        }
+        timeout.writeTo(out);
     }
 }

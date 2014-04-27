@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -22,8 +22,9 @@ package org.elasticsearch.repositories.blobstore;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
-import org.elasticsearch.ElasticSearchException;
-import org.elasticsearch.ElasticSearchParseException;
+import org.apache.lucene.store.RateLimiter;
+import org.elasticsearch.ElasticsearchException;
+import org.elasticsearch.ElasticsearchParseException;
 import org.elasticsearch.cluster.metadata.IndexMetaData;
 import org.elasticsearch.cluster.metadata.MetaData;
 import org.elasticsearch.cluster.metadata.SnapshotId;
@@ -31,15 +32,19 @@ import org.elasticsearch.common.blobstore.BlobMetaData;
 import org.elasticsearch.common.blobstore.BlobPath;
 import org.elasticsearch.common.blobstore.BlobStore;
 import org.elasticsearch.common.blobstore.ImmutableBlobContainer;
+import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.component.AbstractLifecycleComponent;
 import org.elasticsearch.common.compress.CompressorFactory;
 import org.elasticsearch.common.io.stream.BytesStreamOutput;
 import org.elasticsearch.common.io.stream.StreamOutput;
+import org.elasticsearch.common.metrics.CounterMetric;
+import org.elasticsearch.common.unit.ByteSizeUnit;
 import org.elasticsearch.common.unit.ByteSizeValue;
 import org.elasticsearch.common.xcontent.*;
 import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.index.snapshots.IndexShardRepository;
 import org.elasticsearch.index.snapshots.blobstore.BlobStoreIndexShardRepository;
+import org.elasticsearch.index.snapshots.blobstore.BlobStoreIndexShardRepository.RateLimiterListener;
 import org.elasticsearch.repositories.Repository;
 import org.elasticsearch.repositories.RepositoryException;
 import org.elasticsearch.repositories.RepositorySettings;
@@ -95,7 +100,7 @@ import static com.google.common.collect.Lists.newArrayList;
  * }
  * </pre>
  */
-public abstract class BlobStoreRepository extends AbstractLifecycleComponent<Repository> implements Repository {
+public abstract class BlobStoreRepository extends AbstractLifecycleComponent<Repository> implements Repository, RateLimiterListener {
 
     private ImmutableBlobContainer snapshotsBlobContainer;
 
@@ -111,6 +116,15 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent<Rep
 
     private final ToXContent.Params globalOnlyFormatParams;
 
+    private final RateLimiter snapshotRateLimiter;
+
+    private final RateLimiter restoreRateLimiter;
+
+    private final CounterMetric snapshotRateLimitingTimeInNanos = new CounterMetric();
+
+    private final CounterMetric restoreRateLimitingTimeInNanos = new CounterMetric();
+
+
     /**
      * Constructs new BlobStoreRepository
      *
@@ -123,31 +137,34 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent<Rep
         this.repositoryName = repositoryName;
         this.indexShardRepository = (BlobStoreIndexShardRepository) indexShardRepository;
         Map<String, String> globalOnlyParams = Maps.newHashMap();
-        globalOnlyParams.put(MetaData.GLOBAL_PERSISTENT_ONLY_PARAM, "true");
+        globalOnlyParams.put(MetaData.PERSISTENT_ONLY_PARAM, "true");
+        globalOnlyParams.put(MetaData.GLOBAL_ONLY_PARAM, "true");
         globalOnlyFormatParams = new ToXContent.MapParams(globalOnlyParams);
+        snapshotRateLimiter = getRateLimiter(repositorySettings, "max_snapshot_bytes_per_sec", new ByteSizeValue(20, ByteSizeUnit.MB));
+        restoreRateLimiter = getRateLimiter(repositorySettings, "max_restore_bytes_per_sec", new ByteSizeValue(20, ByteSizeUnit.MB));
     }
 
     /**
      * {@inheritDoc}
      */
     @Override
-    protected void doStart() throws ElasticSearchException {
+    protected void doStart() throws ElasticsearchException {
         this.snapshotsBlobContainer = blobStore().immutableBlobContainer(basePath());
-        indexShardRepository.initialize(blobStore(), basePath(), chunkSize());
+        indexShardRepository.initialize(blobStore(), basePath(), chunkSize(), snapshotRateLimiter, restoreRateLimiter, this);
     }
 
     /**
      * {@inheritDoc}
      */
     @Override
-    protected void doStop() throws ElasticSearchException {
+    protected void doStop() throws ElasticsearchException {
     }
 
     /**
      * {@inheritDoc}
      */
     @Override
-    protected void doClose() throws ElasticSearchException {
+    protected void doClose() throws ElasticsearchException {
         try {
             blobStore().close();
         } catch (Throwable t) {
@@ -206,11 +223,13 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent<Rep
                 // TODO: Can we make it atomic?
                 throw new InvalidSnapshotNameException(snapshotId, "snapshot with such name already exists");
             }
-            snapshotsBlobContainer.writeBlob(snapshotBlobName, bStream.bytes().streamInput(), bStream.bytes().length());
+            BytesReference bRef = bStream.bytes();
+            snapshotsBlobContainer.writeBlob(snapshotBlobName, bRef.streamInput(), bRef.length());
             // Write Global MetaData
             // TODO: Check if metadata needs to be written
             bStream = writeGlobalMetaData(metaData);
-            snapshotsBlobContainer.writeBlob(metaDataBlobName(snapshotId), bStream.bytes().streamInput(), bStream.bytes().length());
+            bRef = bStream.bytes();
+            snapshotsBlobContainer.writeBlob(metaDataBlobName(snapshotId), bRef.streamInput(), bRef.length());
             for (String index : indices) {
                 IndexMetaData indexMetaData = metaData.index(index);
                 BlobPath indexPath = basePath().add("indices").add(index);
@@ -225,7 +244,8 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent<Rep
                 IndexMetaData.Builder.toXContent(indexMetaData, builder, ToXContent.EMPTY_PARAMS);
                 builder.endObject();
                 builder.close();
-                indexMetaDataBlobContainer.writeBlob(snapshotBlobName(snapshotId), bStream.bytes().streamInput(), bStream.bytes().length());
+                bRef = bStream.bytes();
+                indexMetaDataBlobContainer.writeBlob(snapshotBlobName(snapshotId), bRef.streamInput(), bRef.length());
             }
         } catch (IOException ex) {
             throw new SnapshotCreationException(snapshotId, ex);
@@ -299,7 +319,8 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent<Rep
             updatedSnapshot.endTime(System.currentTimeMillis());
             snapshot = updatedSnapshot.build();
             BytesStreamOutput bStream = writeSnapshot(snapshot);
-            snapshotsBlobContainer.writeBlob(blobName, bStream.bytes().streamInput(), bStream.bytes().length());
+            BytesReference bRef = bStream.bytes();
+            snapshotsBlobContainer.writeBlob(blobName, bRef.streamInput(), bRef.length());
             ImmutableList<SnapshotId> snapshotIds = snapshots();
             if (!snapshotIds.contains(snapshotId)) {
                 snapshotIds = ImmutableList.<SnapshotId>builder().addAll(snapshotIds).add(snapshotId).build();
@@ -366,7 +387,7 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent<Rep
                         continue;
                     }
                 }
-                throw new ElasticSearchParseException("unexpected token  [" + token + "]");
+                throw new ElasticsearchParseException("unexpected token  [" + token + "]");
             } catch (IOException ex) {
                 throw new SnapshotException(snapshotId, "failed to read metadata", ex);
             } finally {
@@ -385,12 +406,49 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent<Rep
     public Snapshot readSnapshot(SnapshotId snapshotId) {
         try {
             String blobName = snapshotBlobName(snapshotId);
-            byte[] data = snapshotsBlobContainer.readBlobFully(blobName);
-            return readSnapshot(data);
+            int retryCount = 0;
+            while (true) {
+                byte[] data = snapshotsBlobContainer.readBlobFully(blobName);
+                // Because we are overriding snapshot during finalization, it's possible that
+                // we can get an empty or incomplete snapshot for a brief moment
+                // retrying after some what can resolve the issue
+                // TODO: switch to atomic update after non-local gateways are removed and we switch to java 1.7
+                try {
+                    return readSnapshot(data);
+                } catch (ElasticsearchParseException ex) {
+                    if (retryCount++ < 3) {
+                        try {
+                            Thread.sleep(50);
+                        } catch (InterruptedException ex1) {
+                            Thread.currentThread().interrupt();
+                        }
+                    } else {
+                        throw ex;
+                    }
+                }
+            }
         } catch (FileNotFoundException ex) {
             throw new SnapshotMissingException(snapshotId, ex);
         } catch (IOException ex) {
             throw new SnapshotException(snapshotId, "failed to get snapshots", ex);
+        }
+    }
+
+    /**
+     * Configures RateLimiter based on repository and global settings
+     *
+     * @param repositorySettings repository settings
+     * @param setting            setting to use to configure rate limiter
+     * @param defaultRate        default limiting rate
+     * @return rate limiter or null of no throttling is needed
+     */
+    private RateLimiter getRateLimiter(RepositorySettings repositorySettings, String setting, ByteSizeValue defaultRate) {
+        ByteSizeValue maxSnapshotBytesPerSec = repositorySettings.settings().getAsBytesSize(setting,
+                componentSettings.getAsBytesSize(setting, defaultRate));
+        if (maxSnapshotBytesPerSec.bytes() <= 0) {
+            return null;
+        } else {
+            return new RateLimiter.SimpleRateLimiter(maxSnapshotBytesPerSec.mbFrac());
         }
     }
 
@@ -415,7 +473,7 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent<Rep
                     }
                 }
             }
-            throw new ElasticSearchParseException("unexpected token  [" + token + "]");
+            throw new ElasticsearchParseException("unexpected token  [" + token + "]");
         } finally {
             if (parser != null) {
                 parser.close();
@@ -444,7 +502,7 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent<Rep
                     }
                 }
             }
-            throw new ElasticSearchParseException("unexpected token  [" + token + "]");
+            throw new ElasticsearchParseException("unexpected token  [" + token + "]");
         } finally {
             if (parser != null) {
                 parser.close();
@@ -537,7 +595,8 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent<Rep
         builder.endArray();
         builder.endObject();
         builder.close();
-        snapshotsBlobContainer.writeBlob(SNAPSHOTS_FILE, bStream.bytes().streamInput(), bStream.bytes().length());
+        BytesReference bRef = bStream.bytes();
+        snapshotsBlobContainer.writeBlob(SNAPSHOTS_FILE, bRef.streamInput(), bRef.length());
     }
 
     /**
@@ -550,7 +609,7 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent<Rep
      */
     protected ImmutableList<SnapshotId> readSnapshotList() throws IOException {
         byte[] data = snapshotsBlobContainer.readBlobFully(SNAPSHOTS_FILE);
-        ArrayList<SnapshotId> snapshots = new ArrayList<SnapshotId>();
+        ArrayList<SnapshotId> snapshots = new ArrayList<>();
         XContentParser parser = null;
         try {
             parser = XContentHelper.createParser(data, 0, data.length);
@@ -574,4 +633,23 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent<Rep
         return ImmutableList.copyOf(snapshots);
     }
 
+    @Override
+    public void onRestorePause(long nanos) {
+        restoreRateLimitingTimeInNanos.inc(nanos);
+    }
+
+    @Override
+    public void onSnapshotPause(long nanos) {
+        snapshotRateLimitingTimeInNanos.inc(nanos);
+    }
+
+    @Override
+    public long snapshotThrottleTimeInNanos() {
+        return snapshotRateLimitingTimeInNanos.count();
+    }
+
+    @Override
+    public long restoreThrottleTimeInNanos() {
+        return restoreRateLimitingTimeInNanos.count();
+    }
 }

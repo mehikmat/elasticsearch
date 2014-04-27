@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,9 +19,8 @@
 
 package org.elasticsearch.action.mlt;
 
-import org.elasticsearch.ElasticSearchGenerationException;
-import org.elasticsearch.ElasticSearchIllegalArgumentException;
-import org.elasticsearch.Version;
+import org.elasticsearch.ElasticsearchGenerationException;
+import org.elasticsearch.ElasticsearchIllegalArgumentException;
 import org.elasticsearch.action.ActionRequest;
 import org.elasticsearch.action.ActionRequestValidationException;
 import org.elasticsearch.action.ValidateActions;
@@ -34,7 +33,6 @@ import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
-import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.search.Scroll;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 
@@ -55,8 +53,6 @@ import static org.elasticsearch.search.Scroll.readScroll;
  */
 public class MoreLikeThisRequest extends ActionRequest<MoreLikeThisRequest> {
 
-    private static final XContentType contentType = Requests.CONTENT_TYPE;
-
     private String index;
 
     private String type;
@@ -73,8 +69,8 @@ public class MoreLikeThisRequest extends ActionRequest<MoreLikeThisRequest> {
     private String[] stopWords = null;
     private int minDocFreq = -1;
     private int maxDocFreq = -1;
-    private int minWordLen = -1;
-    private int maxWordLen = -1;
+    private int minWordLength = -1;
+    private int maxWordLength = -1;
     private float boostTerms = -1;
 
     private SearchType searchType = SearchType.DEFAULT;
@@ -275,31 +271,31 @@ public class MoreLikeThisRequest extends ActionRequest<MoreLikeThisRequest> {
     /**
      * The minimum word length below which words will be ignored. Defaults to <tt>0</tt>.
      */
-    public MoreLikeThisRequest minWordLen(int minWordLen) {
-        this.minWordLen = minWordLen;
+    public MoreLikeThisRequest minWordLength(int minWordLength) {
+        this.minWordLength = minWordLength;
         return this;
     }
 
     /**
      * The minimum word length below which words will be ignored. Defaults to <tt>0</tt>.
      */
-    public int minWordLen() {
-        return this.minWordLen;
+    public int minWordLength() {
+        return this.minWordLength;
     }
 
     /**
      * The maximum word length above which words will be ignored. Defaults to unbounded.
      */
-    public MoreLikeThisRequest maxWordLen(int maxWordLen) {
-        this.maxWordLen = maxWordLen;
+    public MoreLikeThisRequest maxWordLength(int maxWordLength) {
+        this.maxWordLength = maxWordLength;
         return this;
     }
 
     /**
      * The maximum word length above which words will be ignored. Defaults to unbounded.
      */
-    public int maxWordLen() {
-        return this.maxWordLen;
+    public int maxWordLength() {
+        return this.maxWordLength;
     }
 
     /**
@@ -346,11 +342,11 @@ public class MoreLikeThisRequest extends ActionRequest<MoreLikeThisRequest> {
 
     public MoreLikeThisRequest searchSource(Map searchSource) {
         try {
-            XContentBuilder builder = XContentFactory.contentBuilder(contentType);
+            XContentBuilder builder = XContentFactory.contentBuilder(Requests.CONTENT_TYPE);
             builder.map(searchSource);
             return searchSource(builder);
         } catch (IOException e) {
-            throw new ElasticSearchGenerationException("Failed to generate [" + searchSource + "]", e);
+            throw new ElasticsearchGenerationException("Failed to generate [" + searchSource + "]", e);
         }
     }
 
@@ -409,7 +405,7 @@ public class MoreLikeThisRequest extends ActionRequest<MoreLikeThisRequest> {
     /**
      * The search type of the mlt search query.
      */
-    public MoreLikeThisRequest searchType(String searchType) throws ElasticSearchIllegalArgumentException {
+    public MoreLikeThisRequest searchType(String searchType) throws ElasticsearchIllegalArgumentException {
         return searchType(SearchType.fromString(searchType));
     }
 
@@ -554,8 +550,8 @@ public class MoreLikeThisRequest extends ActionRequest<MoreLikeThisRequest> {
         }
         minDocFreq = in.readVInt();
         maxDocFreq = in.readVInt();
-        minWordLen = in.readVInt();
-        maxWordLen = in.readVInt();
+        minWordLength = in.readVInt();
+        maxWordLength = in.readVInt();
         boostTerms = in.readFloat();
         searchType = SearchType.fromId(in.readByte());
         if (in.readBoolean()) {
@@ -592,9 +588,7 @@ public class MoreLikeThisRequest extends ActionRequest<MoreLikeThisRequest> {
 
         searchSize = in.readVInt();
         searchFrom = in.readVInt();
-        if (in.getVersion().onOrAfter(Version.V_0_90_1)) {
-            routing = in.readOptionalString();
-        }
+        routing = in.readOptionalString();
     }
 
     @Override
@@ -625,8 +619,8 @@ public class MoreLikeThisRequest extends ActionRequest<MoreLikeThisRequest> {
         }
         out.writeVInt(minDocFreq);
         out.writeVInt(maxDocFreq);
-        out.writeVInt(minWordLen);
-        out.writeVInt(maxWordLen);
+        out.writeVInt(minWordLength);
+        out.writeVInt(maxWordLength);
         out.writeFloat(boostTerms);
 
         out.writeByte(searchType.id());
@@ -662,8 +656,6 @@ public class MoreLikeThisRequest extends ActionRequest<MoreLikeThisRequest> {
 
         out.writeVInt(searchSize);
         out.writeVInt(searchFrom);
-        if (out.getVersion().onOrAfter(Version.V_0_90_1)) {
-            out.writeOptionalString(routing);
-        }
+        out.writeOptionalString(routing);
     }
 }

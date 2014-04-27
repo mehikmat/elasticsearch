@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -23,7 +23,7 @@ import com.carrotsearch.hppc.cursors.ObjectObjectCursor;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import org.elasticsearch.Version;
-import org.elasticsearch.action.support.IgnoreIndices;
+import org.elasticsearch.action.support.IndicesOptions;
 import org.elasticsearch.cluster.*;
 import org.elasticsearch.cluster.block.ClusterBlocks;
 import org.elasticsearch.cluster.metadata.*;
@@ -89,7 +89,7 @@ public class RestoreService extends AbstractComponent implements ClusterStateLis
 
     private final MetaDataCreateIndexService createIndexService;
 
-    private final CopyOnWriteArrayList<RestoreCompletionListener> listeners = new CopyOnWriteArrayList<RestoreCompletionListener>();
+    private final CopyOnWriteArrayList<RestoreCompletionListener> listeners = new CopyOnWriteArrayList<>();
 
     @Inject
     public RestoreService(Settings settings, ClusterService clusterService, RepositoriesService repositoriesService, TransportService transportService, AllocationService allocationService, MetaDataCreateIndexService createIndexService) {
@@ -115,7 +115,7 @@ public class RestoreService extends AbstractComponent implements ClusterStateLis
             Repository repository = repositoriesService.repository(request.repository());
             final SnapshotId snapshotId = new SnapshotId(request.repository(), request.name());
             final Snapshot snapshot = repository.readSnapshot(snapshotId);
-            ImmutableList<String> filteredIndices = SnapshotUtils.filterIndices(snapshot.indices(), request.indices(), request.ignoreIndices());
+            ImmutableList<String> filteredIndices = SnapshotUtils.filterIndices(snapshot.indices(), request.indices(), request.indicesOptions());
             final MetaData metaData = repository.readSnapshotMetaData(snapshotId, filteredIndices);
 
             // Make sure that we can restore from this snapshot
@@ -162,6 +162,10 @@ public class RestoreService extends AbstractComponent implements ClusterStateLis
                         ImmutableMap.Builder<ShardId, RestoreMetaData.ShardRestoreStatus> shards = ImmutableMap.builder();
                         for (Map.Entry<String, String> indexEntry : renamedIndices.entrySet()) {
                             String index = indexEntry.getValue();
+                            // Make sure that index was fully snapshotted - don't restore
+                            if (failed(snapshot, index)) {
+                                throw new SnapshotRestoreException(snapshotId, "index [" + index + "] wasn't fully snapshotted - cannot restore");
+                            }
                             RestoreSource restoreSource = new RestoreSource(snapshotId, index);
                             String renamedIndex = indexEntry.getKey();
                             IndexMetaData snapshotIndexMetaData = metaData.index(index);
@@ -187,10 +191,11 @@ public class RestoreService extends AbstractComponent implements ClusterStateLis
                                             "] shard from snapshot with [" + snapshotIndexMetaData.getNumberOfShards() + "] shards");
                                 }
                                 // Index exists and it's closed - open it in metadata and start recovery
-                                IndexMetaData.Builder indexMdBuilder = IndexMetaData.builder(currentIndexMetaData).state(IndexMetaData.State.OPEN);
+                                IndexMetaData.Builder indexMdBuilder = IndexMetaData.builder(snapshotIndexMetaData).state(IndexMetaData.State.OPEN);
+                                indexMdBuilder.version(Math.max(snapshotIndexMetaData.version(), currentIndexMetaData.version() + 1));
                                 IndexMetaData updatedIndexMetaData = indexMdBuilder.index(renamedIndex).build();
                                 rtBuilder.addAsRestore(updatedIndexMetaData, restoreSource);
-                                blocks.removeIndexBlock(index, INDEX_CLOSED_BLOCK);
+                                blocks.removeIndexBlock(renamedIndex, INDEX_CLOSED_BLOCK);
                                 mdBuilder.put(updatedIndexMetaData, true);
                             }
                             for (int shard = 0; shard < snapshotIndexMetaData.getNumberOfShards(); shard++) {
@@ -391,6 +396,24 @@ public class RestoreService extends AbstractComponent implements ClusterStateLis
         }
     }
 
+    private boolean failed(Snapshot snapshot, String index) {
+        for (SnapshotShardFailure failure : snapshot.shardFailures()) {
+            if (index.equals(failure.index())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean failed(Snapshot snapshot, String index, int shard) {
+        for (SnapshotShardFailure failure : snapshot.shardFailures()) {
+            if (index.equals(failure.index()) && shard == failure.shardId()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Adds restore completion listener
      * <p/>
@@ -427,16 +450,17 @@ public class RestoreService extends AbstractComponent implements ClusterStateLis
 
     /**
      * Checks if a repository is currently in use by one of the snapshots
+     *
      * @param clusterState cluster state
-     * @param repository repository id
+     * @param repository   repository id
      * @return true if repository is currently in use by one of the running snapshots
      */
     public static boolean isRepositoryInUse(ClusterState clusterState, String repository) {
         MetaData metaData = clusterState.metaData();
         RestoreMetaData snapshots = metaData.custom(RestoreMetaData.TYPE);
         if (snapshots != null) {
-            for(RestoreMetaData.Entry snapshot : snapshots.entries()) {
-                if(repository.equals(snapshot.snapshotId().getRepository())) {
+            for (RestoreMetaData.Entry snapshot : snapshots.entries()) {
+                if (repository.equals(snapshot.snapshotId().getRepository())) {
                     return true;
                 }
             }
@@ -461,7 +485,7 @@ public class RestoreService extends AbstractComponent implements ClusterStateLis
 
         private String renameReplacement;
 
-        private IgnoreIndices ignoreIndices = IgnoreIndices.DEFAULT;
+        private IndicesOptions indicesOptions = IndicesOptions.strict();
 
         private Settings settings;
 
@@ -494,13 +518,13 @@ public class RestoreService extends AbstractComponent implements ClusterStateLis
         }
 
         /**
-         * Sets ignore indices flag
+         * Sets indices options flags
          *
-         * @param ignoreIndices ignore indices flag
+         * @param indicesOptions indices options flags
          * @return this request
          */
-        public RestoreRequest ignoreIndices(IgnoreIndices ignoreIndices) {
-            this.ignoreIndices = ignoreIndices;
+        public RestoreRequest indicesOptions(IndicesOptions indicesOptions) {
+            this.indicesOptions = indicesOptions;
             return this;
         }
 
@@ -599,12 +623,12 @@ public class RestoreService extends AbstractComponent implements ClusterStateLis
         }
 
         /**
-         * Returns ignore indices flag
+         * Returns indices option flags
          *
-         * @return ignore indices flag
+         * @return indices options flags
          */
-        public IgnoreIndices ignoreIndices() {
-            return ignoreIndices;
+        public IndicesOptions indicesOptions() {
+            return indicesOptions;
         }
 
         /**

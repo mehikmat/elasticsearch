@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -22,8 +22,8 @@ package org.elasticsearch.action.mlt;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.util.BytesRef;
-import org.elasticsearch.ElasticSearchException;
-import org.elasticsearch.ElasticSearchIllegalStateException;
+import org.elasticsearch.ElasticsearchException;
+import org.elasticsearch.ElasticsearchIllegalStateException;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.get.GetRequest;
 import org.elasticsearch.action.get.GetResponse;
@@ -136,7 +136,7 @@ public class TransportMoreLikeThisAction extends TransportAction<MoreLikeThisReq
                 try {
                     final DocumentMapper docMapper = indicesService.indexServiceSafe(concreteIndex).mapperService().documentMapper(request.type());
                     if (docMapper == null) {
-                        throw new ElasticSearchException("No DocumentMapper found for type [" + request.type() + "]");
+                        throw new ElasticsearchException("No DocumentMapper found for type [" + request.type() + "]");
                     }
                     final Set<String> fields = newHashSet();
                     if (request.fields() != null) {
@@ -173,7 +173,7 @@ public class TransportMoreLikeThisAction extends TransportAction<MoreLikeThisReq
 
                     if (!boolBuilder.hasClauses()) {
                         // no field added, fail
-                        listener.onFailure(new ElasticSearchException("No fields found to fetch the 'likeText' from"));
+                        listener.onFailure(new ElasticsearchException("No fields found to fetch the 'likeText' from"));
                         return;
                     }
 
@@ -236,7 +236,7 @@ public class TransportMoreLikeThisAction extends TransportAction<MoreLikeThisReq
         ShardIterator shardIterator = clusterService.operationRouting().getShards(clusterState, concreteIndex, request.type(), request.id(), request.routing(), null);
         ShardRouting shardRouting = shardIterator.firstOrNull();
         if (shardRouting == null) {
-            throw new ElasticSearchException("No shards for index " + request.index());
+            throw new ElasticsearchException("No shards for index " + request.index());
         }
         String nodeId = shardRouting.currentNodeId();
         DiscoveryNode discoveryNode = clusterState.nodes().get(nodeId);
@@ -299,7 +299,7 @@ public class TransportMoreLikeThisAction extends TransportAction<MoreLikeThisReq
         } else if (field.numericValue() != null) {
             return field.numericValue();
         } else {
-            throw new ElasticSearchIllegalStateException("Field should have either a string, numeric or binary value");
+            throw new ElasticsearchIllegalStateException("Field should have either a string, numeric or binary value");
         }
     }
 
@@ -314,8 +314,8 @@ public class TransportMoreLikeThisAction extends TransportAction<MoreLikeThisReq
                 .boostTerms(request.boostTerms())
                 .minDocFreq(request.minDocFreq())
                 .maxDocFreq(request.maxDocFreq())
-                .minWordLen(request.minWordLen())
-                .maxWordLen(request.maxWordLen())
+                .minWordLength(request.minWordLength())
+                .maxWordLen(request.maxWordLength())
                 .minTermFreq(request.minTermFreq())
                 .maxQueryTerms(request.maxQueryTerms())
                 .stopWords(request.stopWords())

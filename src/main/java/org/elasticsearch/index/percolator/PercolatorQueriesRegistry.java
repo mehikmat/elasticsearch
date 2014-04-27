@@ -1,10 +1,29 @@
+/*
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 package org.elasticsearch.index.percolator;
 
 import org.apache.lucene.index.Term;
 import org.apache.lucene.queries.TermFilter;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.util.BytesRef;
-import org.elasticsearch.ElasticSearchException;
+import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.lucene.HashedBytesRef;
@@ -20,6 +39,7 @@ import org.elasticsearch.index.engine.Engine;
 import org.elasticsearch.index.fielddata.IndexFieldDataService;
 import org.elasticsearch.index.indexing.IndexingOperationListener;
 import org.elasticsearch.index.indexing.ShardIndexingService;
+import org.elasticsearch.index.mapper.DocumentMapper;
 import org.elasticsearch.index.mapper.DocumentTypeListener;
 import org.elasticsearch.index.mapper.MapperService;
 import org.elasticsearch.index.mapper.internal.TypeFieldMapper;
@@ -131,7 +151,7 @@ public class PercolatorQueriesRegistry extends AbstractIndexShardComponent {
             String currentFieldName = null;
             XContentParser.Token token = parser.nextToken(); // move the START_OBJECT
             if (token != XContentParser.Token.START_OBJECT) {
-                throw new ElasticSearchException("failed to parse query [" + id + "], not starting with OBJECT");
+                throw new ElasticsearchException("failed to parse query [" + id + "], not starting with OBJECT");
             }
             while ((token = parser.nextToken()) != XContentParser.Token.END_OBJECT) {
                 if (token == XContentParser.Token.FIELD_NAME) {
@@ -191,15 +211,15 @@ public class PercolatorQueriesRegistry extends AbstractIndexShardComponent {
     private class PercolateTypeListener implements DocumentTypeListener {
 
         @Override
-        public void beforeCreate(String type) {
-            if (PercolatorService.TYPE_NAME.equals(type)) {
+        public void beforeCreate(DocumentMapper mapper) {
+            if (PercolatorService.TYPE_NAME.equals(mapper.type())) {
                 enableRealTimePercolator();
             }
         }
 
         @Override
-        public void afterRemove(String type) {
-            if (PercolatorService.TYPE_NAME.equals(type)) {
+        public void afterRemove(DocumentMapper mapper) {
+            if (PercolatorService.TYPE_NAME.equals(mapper.type())) {
                 disableRealTimePercolator();
                 clear();
             }
@@ -251,7 +271,7 @@ public class PercolatorQueriesRegistry extends AbstractIndexShardComponent {
                         shardPercolateService.addedQuery(entry.getKey(), previousQuery, entry.getValue());
                     }
                 } finally {
-                    searcher.release();
+                    searcher.close();
                 }
             } catch (Exception e) {
                 throw new PercolatorException(shardId.index(), "failed to load queries from percolator index", e);

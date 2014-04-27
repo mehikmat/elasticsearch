@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -26,7 +26,8 @@ import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.util.BytesRef;
-import org.elasticsearch.ElasticSearchIllegalStateException;
+import org.elasticsearch.ElasticsearchIllegalArgumentException;
+import org.elasticsearch.ElasticsearchIllegalStateException;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.lucene.all.AllEntries;
@@ -68,9 +69,9 @@ public class ParseContext {
         /** Add fields so that they can later be fetched using {@link #getByKey(Object)}. */
         public void addWithKey(Object key, IndexableField field) {
             if (keyedFields == null) {
-                keyedFields = new ObjectObjectOpenHashMap<Object, IndexableField>();
+                keyedFields = new ObjectObjectOpenHashMap<>();
             } else if (keyedFields.containsKey(key)) {
-                throw new ElasticSearchIllegalStateException("Only one field can be stored per key");
+                throw new ElasticsearchIllegalStateException("Only one field can be stored per key");
             }
             keyedFields.put(key, field);
             add(field);
@@ -82,7 +83,7 @@ public class ParseContext {
         }
 
         public IndexableField[] getFields(String name) {
-            List<IndexableField> f = new ArrayList<IndexableField>();
+            List<IndexableField> f = new ArrayList<>();
             for (IndexableField field : fields) {
                 if (field.name().equals(name)) {
                     f.add(field);
@@ -150,10 +151,12 @@ public class ParseContext {
 
     private StringBuilder stringBuilder = new StringBuilder();
 
-    private Map<String, String> ignoredValues = new HashMap<String, String>();
+    private Map<String, String> ignoredValues = new HashMap<>();
 
     private boolean mappingsModified = false;
     private boolean withinNewMapper = false;
+    private boolean withinCopyTo = false;
+    private boolean withinMultiFields = false;
 
     private boolean externalValueSet;
 
@@ -221,6 +224,26 @@ public class ParseContext {
 
     public boolean isWithinNewMapper() {
         return withinNewMapper;
+    }
+
+    public void setWithinCopyTo() {
+        this.withinCopyTo = true;
+    }
+
+    public void clearWithinCopyTo() {
+        this.withinCopyTo = false;
+    }
+
+    public boolean isWithinCopyTo() {
+        return withinCopyTo;
+    }
+
+    public void setWithinMultiFields() {
+        this.withinMultiFields = true;
+    }
+
+    public void clearWithinMultiFields() {
+        this.withinMultiFields = false;
     }
 
     public String index() {
@@ -343,6 +366,12 @@ public class ParseContext {
      * its actual value (so, if not set, defaults to "true") and the field is indexed.
      */
     private boolean includeInAll(Boolean specificIncludeInAll, boolean indexed) {
+        if (withinCopyTo) {
+            return false;
+        }
+        if (withinMultiFields) {
+            return false;
+        }
         if (!docMapper.allFieldMapper().enabled()) {
             return false;
         }
@@ -377,6 +406,23 @@ public class ParseContext {
     public Object externalValue() {
         externalValueSet = false;
         return externalValue;
+    }
+
+    /**
+     * Try to parse an externalValue if any
+     * @param clazz Expected class for external value
+     * @return null if no external value has been set or the value
+     */
+    public <T> T parseExternalValue(Class<T> clazz) {
+        if (!externalValueSet() || externalValue() == null) {
+            return null;
+        }
+
+        if (!clazz.isInstance(externalValue())) {
+            throw new ElasticsearchIllegalArgumentException("illegal external value class ["
+                    + externalValue().getClass().getName() + "]. Should be " + clazz.getName());
+        }
+        return (T) externalValue();
     }
 
     public float docBoost() {

@@ -1,13 +1,13 @@
 /*
- * Licensed to Elastic Search and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. Elastic Search licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,10 +16,10 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.indexing;
 
 import org.elasticsearch.action.bulk.BulkResponse;
+import org.elasticsearch.action.index.IndexRequestBuilder;
 import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.index.VersionType;
 import org.elasticsearch.test.ElasticsearchIntegrationTest;
@@ -33,6 +33,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 
+import static org.elasticsearch.test.hamcrest.ElasticsearchAssertions.assertHitCount;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.lessThanOrEqualTo;
 
@@ -40,6 +41,29 @@ import static org.hamcrest.Matchers.lessThanOrEqualTo;
  *
  */
 public class IndexActionTests extends ElasticsearchIntegrationTest {
+
+    /**
+     * This test tries to simulate load while creating an index and indexing documents
+     * while the index is being created.
+     */
+    @Test
+    public void testAutoGenerateIdNoDuplicates() throws Exception {
+        int numberOfIterations = randomIntBetween(10, 50);
+        for (int i = 0; i < numberOfIterations; i++) {
+            createIndex("test");
+            int numOfDocs = randomIntBetween(10, 100);
+            List<IndexRequestBuilder> builders = new ArrayList<>(numOfDocs);
+            for (int j = 0; j < numOfDocs; j++) {
+                builders.add(client().prepareIndex("test", "type").setSource("field", "value"));
+            }
+            indexRandom(true, builders);
+            int numOfChecks = randomIntBetween(5, 10);
+            for (int j = 0; j < numOfChecks; j++) {
+                assertHitCount(client().prepareSearch("test").get(), numOfDocs);
+            }
+            cluster().wipeIndices("test");
+        }
+    }
 
     @Test
     public void testCreatedFlag() throws Exception {
@@ -86,7 +110,7 @@ public class IndexActionTests extends ElasticsearchIntegrationTest {
 
         final AtomicIntegerArray createdCounts = new AtomicIntegerArray(docCount);
         ExecutorService threadPool = Executors.newFixedThreadPool(threadCount);
-        List<Callable<Void>> tasks = new ArrayList<Callable<Void>>(taskCount);
+        List<Callable<Void>> tasks = new ArrayList<>(taskCount);
         final Random random = getRandom();
         for (int i=0;i< taskCount; i++ ) {
             tasks.add(new Callable<Void>() {

@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,9 +19,9 @@
 
 package org.elasticsearch.rest;
 
-import org.elasticsearch.ElasticSearchException;
-import org.elasticsearch.ElasticSearchIllegalArgumentException;
-import org.elasticsearch.ElasticSearchIllegalStateException;
+import org.elasticsearch.ElasticsearchException;
+import org.elasticsearch.ElasticsearchIllegalArgumentException;
+import org.elasticsearch.ElasticsearchIllegalStateException;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.component.AbstractLifecycleComponent;
 import org.elasticsearch.common.inject.Inject;
@@ -41,12 +41,12 @@ import static org.elasticsearch.rest.RestStatus.OK;
  */
 public class RestController extends AbstractLifecycleComponent<RestController> {
 
-    private final PathTrie<RestHandler> getHandlers = new PathTrie<RestHandler>(RestUtils.REST_DECODER);
-    private final PathTrie<RestHandler> postHandlers = new PathTrie<RestHandler>(RestUtils.REST_DECODER);
-    private final PathTrie<RestHandler> putHandlers = new PathTrie<RestHandler>(RestUtils.REST_DECODER);
-    private final PathTrie<RestHandler> deleteHandlers = new PathTrie<RestHandler>(RestUtils.REST_DECODER);
-    private final PathTrie<RestHandler> headHandlers = new PathTrie<RestHandler>(RestUtils.REST_DECODER);
-    private final PathTrie<RestHandler> optionsHandlers = new PathTrie<RestHandler>(RestUtils.REST_DECODER);
+    private final PathTrie<RestHandler> getHandlers = new PathTrie<>(RestUtils.REST_DECODER);
+    private final PathTrie<RestHandler> postHandlers = new PathTrie<>(RestUtils.REST_DECODER);
+    private final PathTrie<RestHandler> putHandlers = new PathTrie<>(RestUtils.REST_DECODER);
+    private final PathTrie<RestHandler> deleteHandlers = new PathTrie<>(RestUtils.REST_DECODER);
+    private final PathTrie<RestHandler> headHandlers = new PathTrie<>(RestUtils.REST_DECODER);
+    private final PathTrie<RestHandler> optionsHandlers = new PathTrie<>(RestUtils.REST_DECODER);
 
     private final RestHandlerFilter handlerFilter = new RestHandlerFilter();
 
@@ -59,15 +59,15 @@ public class RestController extends AbstractLifecycleComponent<RestController> {
     }
 
     @Override
-    protected void doStart() throws ElasticSearchException {
+    protected void doStart() throws ElasticsearchException {
     }
 
     @Override
-    protected void doStop() throws ElasticSearchException {
+    protected void doStop() throws ElasticsearchException {
     }
 
     @Override
-    protected void doClose() throws ElasticSearchException {
+    protected void doClose() throws ElasticsearchException {
         for (RestFilter filter : filters) {
             filter.close();
         }
@@ -113,7 +113,7 @@ public class RestController extends AbstractLifecycleComponent<RestController> {
                 headHandlers.insert(path, handler);
                 break;
             default:
-                throw new ElasticSearchIllegalArgumentException("Can't handle [" + method + "] for path [" + path + "]");
+                throw new ElasticsearchIllegalArgumentException("Can't handle [" + method + "] for path [" + path + "]");
         }
     }
 
@@ -140,11 +140,11 @@ public class RestController extends AbstractLifecycleComponent<RestController> {
         if (filters.length == 0) {
             try {
                 executeHandler(request, channel);
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 try {
-                    channel.sendResponse(new XContentThrowableRestResponse(request, e));
-                } catch (IOException e1) {
-                    logger.error("Failed to send failure response for uri [" + request.uri() + "]", e1);
+                    channel.sendResponse(new BytesRestResponse(channel, e));
+                } catch (Throwable e1) {
+                    logger.error("failed to send failure response for uri [" + request.uri() + "]", e1);
                 }
             }
         } else {
@@ -153,17 +153,16 @@ public class RestController extends AbstractLifecycleComponent<RestController> {
         }
     }
 
-    void executeHandler(RestRequest request, RestChannel channel) {
+    void executeHandler(RestRequest request, RestChannel channel) throws Exception {
         final RestHandler handler = getHandler(request);
         if (handler != null) {
             handler.handleRequest(request, channel);
         } else {
             if (request.method() == RestRequest.Method.OPTIONS) {
                 // when we have OPTIONS request, simply send OK by default (with the Access Control Origin header which gets automatically added)
-                StringRestResponse response = new StringRestResponse(OK);
-                channel.sendResponse(response);
+                channel.sendResponse(new BytesRestResponse(OK));
             } else {
-                channel.sendResponse(new StringRestResponse(BAD_REQUEST, "No handler found for uri [" + request.uri() + "] and method [" + request.method() + "]"));
+                channel.sendResponse(new BytesRestResponse(BAD_REQUEST, "No handler found for uri [" + request.uri() + "] and method [" + request.method() + "]"));
             }
         }
     }
@@ -211,7 +210,7 @@ public class RestController extends AbstractLifecycleComponent<RestController> {
                 int loc = index;
                 index++;
                 if (loc > filters.length) {
-                    throw new ElasticSearchIllegalStateException("filter continueProcessing was called more than expected");
+                    throw new ElasticsearchIllegalStateException("filter continueProcessing was called more than expected");
                 } else if (loc == filters.length) {
                     executionFilter.process(request, channel, this);
                 } else {
@@ -220,7 +219,7 @@ public class RestController extends AbstractLifecycleComponent<RestController> {
                 }
             } catch (Exception e) {
                 try {
-                    channel.sendResponse(new XContentThrowableRestResponse(request, e));
+                    channel.sendResponse(new BytesRestResponse(channel, e));
                 } catch (IOException e1) {
                     logger.error("Failed to send failure response for uri [" + request.uri() + "]", e1);
                 }
@@ -231,7 +230,7 @@ public class RestController extends AbstractLifecycleComponent<RestController> {
     class RestHandlerFilter extends RestFilter {
 
         @Override
-        public void process(RestRequest request, RestChannel channel, RestFilterChain filterChain) {
+        public void process(RestRequest request, RestChannel channel, RestFilterChain filterChain) throws Exception {
             executeHandler(request, channel);
         }
     }

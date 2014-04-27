@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,10 +19,10 @@
 
 package org.elasticsearch.action.search;
 
-import org.elasticsearch.ElasticSearchIllegalArgumentException;
+import org.elasticsearch.ElasticsearchIllegalArgumentException;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.ActionRequestBuilder;
-import org.elasticsearch.action.support.IgnoreIndices;
+import org.elasticsearch.action.support.IndicesOptions;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.internal.InternalClient;
 import org.elasticsearch.common.Nullable;
@@ -84,7 +84,7 @@ public class SearchRequestBuilder extends ActionRequestBuilder<SearchRequest, Se
      * one of "dfs_query_then_fetch"/"dfsQueryThenFetch", "dfs_query_and_fetch"/"dfsQueryAndFetch",
      * "query_then_fetch"/"queryThenFetch", and "query_and_fetch"/"queryAndFetch".
      */
-    public SearchRequestBuilder setSearchType(String searchType) throws ElasticSearchIllegalArgumentException {
+    public SearchRequestBuilder setSearchType(String searchType) throws ElasticsearchIllegalArgumentException {
         request.searchType(searchType);
         return this;
     }
@@ -173,10 +173,12 @@ public class SearchRequestBuilder extends ActionRequestBuilder<SearchRequest, Se
     }
 
     /**
-     * Specifies what type of requested indices to ignore. For example indices that don't exist.
+     * Specifies what type of requested indices to ignore and wildcard indices expressions.
+     *
+     * For example indices that don't exist.
      */
-    public SearchRequestBuilder setIgnoreIndices(IgnoreIndices ignoreIndices) {
-        request().ignoreIndices(ignoreIndices);
+    public SearchRequestBuilder setIndicesOptions(IndicesOptions indicesOptions) {
+        request().indicesOptions(indicesOptions);
         return this;
     }
 
@@ -416,6 +418,17 @@ public class SearchRequestBuilder extends ActionRequestBuilder<SearchRequest, Se
     }
 
     /**
+     * Adds a field data based field to load and return. The field does not have to be stored,
+     * but its recommended to use non analyzed or numeric fields.
+     *
+     * @param name The field to get from the field data cache
+     */
+    public SearchRequestBuilder addFieldDataField(String name) {
+        sourceBuilder().fieldDataField(name);
+        return this;
+    }
+
+    /**
      * Adds a script based field to load and return. The field does not have to be stored,
      * but its recommended to use non analyzed or numeric fields.
      *
@@ -444,10 +457,14 @@ public class SearchRequestBuilder extends ActionRequestBuilder<SearchRequest, Se
      * Adds a partial field based on _source, with an "include" and/or "exclude" set which can include simple wildcard
      * elements.
      *
+     * @deprecated since 1.0.0
+     * use {@link org.elasticsearch.action.search.SearchRequestBuilder#setFetchSource(String, String)} instead
+     *
      * @param name    The name of the field
      * @param include An optional include (optionally wildcarded) pattern from _source
      * @param exclude An optional exclude (optionally wildcarded) pattern from _source
      */
+    @Deprecated
     public SearchRequestBuilder addPartialField(String name, @Nullable String include, @Nullable String exclude) {
         sourceBuilder().partialField(name, include, exclude);
         return this;
@@ -457,10 +474,14 @@ public class SearchRequestBuilder extends ActionRequestBuilder<SearchRequest, Se
      * Adds a partial field based on _source, with an "includes" and/or "excludes set which can include simple wildcard
      * elements.
      *
+     * @deprecated since 1.0.0
+     * use {@link org.elasticsearch.action.search.SearchRequestBuilder#setFetchSource(String[], String[])} instead
+     *
      * @param name     The name of the field
      * @param includes An optional list of includes (optionally wildcarded) patterns from _source
      * @param excludes An optional list of excludes (optionally wildcarded) patterns from _source
      */
+    @Deprecated
     public SearchRequestBuilder addPartialField(String name, @Nullable String[] includes, @Nullable String[] excludes) {
         sourceBuilder().partialField(name, includes, excludes);
         return this;
@@ -685,6 +706,29 @@ public class SearchRequestBuilder extends ActionRequestBuilder<SearchRequest, Se
         return this;
     }
 
+    public SearchRequestBuilder setHighlighterFragmentSize(Integer fragmentSize) {
+        highlightBuilder().fragmentSize(fragmentSize);
+        return this;
+    }
+
+    public SearchRequestBuilder setHighlighterNumOfFragments(Integer numOfFragments) {
+        highlightBuilder().numOfFragments(numOfFragments);
+        return this;
+    }
+
+    public SearchRequestBuilder setHighlighterFilter(Boolean highlightFilter) {
+        highlightBuilder().highlightFilter(highlightFilter);
+        return this;
+    }
+
+    /**
+     * The encoder to set for highlighting
+     */
+    public SearchRequestBuilder setHighlighterEncoder(String encoder) {
+        highlightBuilder().encoder(encoder);
+        return this;
+    }
+
     /**
      * Explicitly set the pre tags that will be used for highlighting.
      */
@@ -711,25 +755,18 @@ public class SearchRequestBuilder extends ActionRequestBuilder<SearchRequest, Se
         return this;
     }
 
-
-    /**
-     * The encoder to set for highlighting
-     */
-    public SearchRequestBuilder setHighlighterEncoder(String encoder) {
-        highlightBuilder().encoder(encoder);
-        return this;
-    }
-
-    /**
-     * Sets a query to be used for highlighting all fields instead of the search query.
-     */
-    public SearchRequestBuilder setHighlighterQuery(QueryBuilder highlightQuery) {
-        highlightBuilder().highlightQuery(highlightQuery);
-        return this;
-    }
-
     public SearchRequestBuilder setHighlighterRequireFieldMatch(boolean requireFieldMatch) {
         highlightBuilder().requireFieldMatch(requireFieldMatch);
+        return this;
+    }
+
+    public SearchRequestBuilder setHighlighterBoundaryMaxScan(Integer boundaryMaxScan) {
+        highlightBuilder().boundaryMaxScan(boundaryMaxScan);
+        return this;
+    }
+
+    public SearchRequestBuilder setHighlighterBoundaryChars(char[] boundaryChars) {
+        highlightBuilder().boundaryChars(boundaryChars);
         return this;
     }
 
@@ -738,6 +775,19 @@ public class SearchRequestBuilder extends ActionRequestBuilder<SearchRequest, Se
      */
     public SearchRequestBuilder setHighlighterType(String type) {
         highlightBuilder().highlighterType(type);
+        return this;
+    }
+
+    public SearchRequestBuilder setHighlighterFragmenter(String fragmenter) {
+        highlightBuilder().fragmenter(fragmenter);
+        return this;
+    }
+
+    /**
+     * Sets a query to be used for highlighting all fields instead of the search query.
+     */
+    public SearchRequestBuilder setHighlighterQuery(QueryBuilder highlightQuery) {
+        highlightBuilder().highlightQuery(highlightQuery);
         return this;
     }
 
@@ -752,8 +802,24 @@ public class SearchRequestBuilder extends ActionRequestBuilder<SearchRequest, Se
         return this;
     }
 
+    /**
+     * Sets the maximum number of phrases the fvh will consider if the field doesn't also define phraseLimit.
+     */
+    public SearchRequestBuilder setHighlighterPhraseLimit(Integer phraseLimit) {
+        highlightBuilder().phraseLimit(phraseLimit);
+        return this;
+    }
+
     public SearchRequestBuilder setHighlighterOptions(Map<String, Object> options) {
         highlightBuilder().options(options);
+        return this;
+    }
+
+    /**
+     * Forces to highlight fields based on the source even if fields are stored separately.
+     */
+    public SearchRequestBuilder setHighlighterForceSource(Boolean forceSource) {
+        highlightBuilder().forceSource(forceSource);
         return this;
     }
 
@@ -773,13 +839,66 @@ public class SearchRequestBuilder extends ActionRequestBuilder<SearchRequest, Se
         return this;
     }
 
+    /**
+     * Clears all rescorers on the builder and sets the first one.  To use multiple rescore windows use
+     * {@link #addRescorer(org.elasticsearch.search.rescore.RescoreBuilder.Rescorer, int)}.
+     * @param rescorer rescorer configuration
+     * @return this for chaining
+     */
     public SearchRequestBuilder setRescorer(RescoreBuilder.Rescorer rescorer) {
-        rescoreBuilder().rescorer(rescorer);
+        sourceBuilder().clearRescorers();
+        return addRescorer(rescorer);
+    }
+
+    /**
+     * Clears all rescorers on the builder and sets the first one.  To use multiple rescore windows use
+     * {@link #addRescorer(org.elasticsearch.search.rescore.RescoreBuilder.Rescorer, int)}.
+     * @param rescorer rescorer configuration
+     * @param window rescore window
+     * @return this for chaining
+     */
+    public SearchRequestBuilder setRescorer(RescoreBuilder.Rescorer rescorer, int window) {
+        sourceBuilder().clearRescorers();
+        return addRescorer(rescorer, window);
+    }
+
+    /**
+     * Adds a new rescorer.
+     * @param rescorer rescorer configuration
+     * @return this for chaining
+     */
+    public SearchRequestBuilder addRescorer(RescoreBuilder.Rescorer rescorer) {
+        sourceBuilder().addRescorer(new RescoreBuilder().rescorer(rescorer));
         return this;
     }
 
+    /**
+     * Adds a new rescorer.
+     * @param rescorer rescorer configuration
+     * @param window rescore window
+     * @return this for chaining
+     */
+    public SearchRequestBuilder addRescorer(RescoreBuilder.Rescorer rescorer, int window) {
+        sourceBuilder().addRescorer(new RescoreBuilder().rescorer(rescorer).windowSize(window));
+        return this;
+    }
+
+    /**
+     * Clears all rescorers from the builder.
+     * @return this for chaining
+     */
+    public SearchRequestBuilder clearRescorers() {
+        sourceBuilder().clearRescorers();
+        return this;
+    }
+
+    /**
+     * Sets the rescore window for all rescorers that don't specify a window when added.
+     * @param window rescore window
+     * @return this for chaining
+     */
     public SearchRequestBuilder setRescoreWindow(int window) {
-        rescoreBuilder().windowSize(window);
+        sourceBuilder().defaultRescoreWindowSize(window);
         return this;
     }
 
@@ -908,6 +1027,30 @@ public class SearchRequestBuilder extends ActionRequestBuilder<SearchRequest, Se
     }
 
     /**
+     * template stuff
+     */
+
+    public SearchRequestBuilder setTemplateName(String templateName) {
+        request.templateName(templateName);
+        return this;
+    }
+
+    public SearchRequestBuilder setTemplateParams(Map<String,String> templateParams) {
+        request.templateParams(templateParams);
+        return this;
+    }
+
+    public SearchRequestBuilder setTemplateSource(String source) {
+        request.templateSource(source);
+        return this;
+    }
+
+    public SearchRequestBuilder setTemplateSource(BytesReference source) {
+        request.templateSource(source, true);
+        return this;
+    }
+
+    /**
      * Sets the source builder to be used with this request. Note, any operations done
      * on this require builder before are discarded as this internal builder replaces
      * what has been built up until this point.
@@ -959,9 +1102,4 @@ public class SearchRequestBuilder extends ActionRequestBuilder<SearchRequest, Se
     private SuggestBuilder suggestBuilder() {
         return sourceBuilder().suggest();
     }
-
-    private RescoreBuilder rescoreBuilder() {
-        return sourceBuilder().rescore();
-    }
-
 }

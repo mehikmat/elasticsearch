@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,10 +19,12 @@
 
 package org.elasticsearch.index.fielddata;
 
+import org.apache.lucene.index.TermsEnum;
+
 /**
  * The thread safe {@link org.apache.lucene.index.AtomicReader} level cache of the data.
  */
-public interface AtomicFieldData<Script extends ScriptDocValues> {
+public interface AtomicFieldData<Script extends ScriptDocValues> extends RamUsage {
 
     /**
      * If this method returns false, this means that no document has multiple values. However this method may return true even if all
@@ -32,24 +34,9 @@ public interface AtomicFieldData<Script extends ScriptDocValues> {
     boolean isMultiValued();
 
     /**
-     * Are the values ordered? (in ascending manner).
-     */
-    boolean isValuesOrdered();
-
-    /**
-     * The number of docs in this field data.
-     */
-    int getNumDocs();
-
-    /**
      * An upper limit of the number of unique values in this atomic field data.
      */
     long getNumberUniqueValues();
-
-    /**
-     * Size (in bytes) of memory used by this field data.
-     */
-    long getMemorySizeInBytes();
 
     /**
      * Use a non thread safe (lightweight) view of the values as bytes.
@@ -78,6 +65,12 @@ public interface AtomicFieldData<Script extends ScriptDocValues> {
          * @param needsHashes
          */
         BytesValues.WithOrdinals getBytesValues(boolean needsHashes);
+
+        /**
+         * Returns a terms enum to iterate over all the underlying values.
+         */
+        TermsEnum getTermsEnum();
+
     }
 
     /**

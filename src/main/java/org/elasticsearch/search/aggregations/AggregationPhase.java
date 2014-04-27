@@ -1,13 +1,13 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,7 +16,6 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.search.aggregations;
 
 import com.google.common.collect.ImmutableMap;
@@ -24,8 +23,10 @@ import org.apache.lucene.index.AtomicReaderContext;
 import org.apache.lucene.search.Filter;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.Scorer;
-import org.elasticsearch.ElasticSearchException;
+import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.common.inject.Inject;
+import org.elasticsearch.common.lease.Releasable;
+import org.elasticsearch.common.lease.Releasables;
 import org.elasticsearch.common.lucene.search.Queries;
 import org.elasticsearch.common.lucene.search.XCollector;
 import org.elasticsearch.common.lucene.search.XConstantScoreQuery;
@@ -39,6 +40,7 @@ import org.elasticsearch.search.query.QueryPhaseExecutionException;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
@@ -75,7 +77,7 @@ public class AggregationPhase implements SearchPhase {
             AggregationContext aggregationContext = new AggregationContext(context);
             context.aggregations().aggregationContext(aggregationContext);
 
-            List<Aggregator> collectors = new ArrayList<Aggregator>();
+            List<Aggregator> collectors = new ArrayList<>();
             Aggregator[] aggregators = context.aggregations().factories().createTopLevelAggregators(aggregationContext);
             for (int i = 0; i < aggregators.length; i++) {
                 if (!(aggregators[i] instanceof GlobalAggregator)) {
@@ -89,11 +91,12 @@ public class AggregationPhase implements SearchPhase {
             if (!collectors.isEmpty()) {
                 context.searcher().addMainQueryCollector(new AggregationsCollector(collectors, aggregationContext));
             }
+            aggregationContext.setNextReader(context.searcher().getIndexReader().getContext());
         }
     }
 
     @Override
-    public void execute(SearchContext context) throws ElasticSearchException {
+    public void execute(SearchContext context) throws ElasticsearchException {
         if (context.aggregations() == null) {
             return;
         }
@@ -104,7 +107,7 @@ public class AggregationPhase implements SearchPhase {
         }
 
         Aggregator[] aggregators = context.aggregations().aggregators();
-        List<Aggregator> globals = new ArrayList<Aggregator>();
+        List<Aggregator> globals = new ArrayList<>();
         for (int i = 0; i < aggregators.length; i++) {
             if (aggregators[i] instanceof GlobalAggregator) {
                 globals.add(aggregators[i]);
@@ -127,22 +130,21 @@ public class AggregationPhase implements SearchPhase {
             collector.postCollection();
         }
 
-        List<InternalAggregation> aggregations = new ArrayList<InternalAggregation>(aggregators.length);
+        List<InternalAggregation> aggregations = new ArrayList<>(aggregators.length);
         for (Aggregator aggregator : context.aggregations().aggregators()) {
             aggregations.add(aggregator.buildAggregation(0));
         }
         context.queryResult().aggregations(new InternalAggregations(aggregations));
-
     }
 
 
     public static class AggregationsCollector extends XCollector {
 
         private final AggregationContext aggregationContext;
-        private final List<Aggregator> collectors;
+        private final Aggregator[] collectors;
 
-        public AggregationsCollector(List<Aggregator> collectors, AggregationContext aggregationContext) {
-            this.collectors = collectors;
+        public AggregationsCollector(Collection<Aggregator> collectors, AggregationContext aggregationContext) {
+            this.collectors = collectors.toArray(new Aggregator[collectors.size()]);
             this.aggregationContext = aggregationContext;
         }
 
@@ -153,8 +155,8 @@ public class AggregationPhase implements SearchPhase {
 
         @Override
         public void collect(int doc) throws IOException {
-            for (int i = 0; i < collectors.size(); i++) {
-                collectors.get(i).collect(doc, 0);
+            for (Aggregator collector : collectors) {
+                collector.collect(doc, 0);
             }
         }
 
@@ -170,8 +172,8 @@ public class AggregationPhase implements SearchPhase {
 
         @Override
         public void postCollection() {
-            for (int i = 0; i < collectors.size(); i++) {
-                collectors.get(i).postCollection();
+            for (Aggregator collector : collectors) {
+                collector.postCollection();
             }
         }
     }

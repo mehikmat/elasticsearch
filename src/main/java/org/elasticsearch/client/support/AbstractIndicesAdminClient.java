@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -64,10 +64,6 @@ import org.elasticsearch.action.admin.indices.flush.FlushAction;
 import org.elasticsearch.action.admin.indices.flush.FlushRequest;
 import org.elasticsearch.action.admin.indices.flush.FlushRequestBuilder;
 import org.elasticsearch.action.admin.indices.flush.FlushResponse;
-import org.elasticsearch.action.admin.indices.gateway.snapshot.GatewaySnapshotAction;
-import org.elasticsearch.action.admin.indices.gateway.snapshot.GatewaySnapshotRequest;
-import org.elasticsearch.action.admin.indices.gateway.snapshot.GatewaySnapshotRequestBuilder;
-import org.elasticsearch.action.admin.indices.gateway.snapshot.GatewaySnapshotResponse;
 import org.elasticsearch.action.admin.indices.mapping.delete.DeleteMappingAction;
 import org.elasticsearch.action.admin.indices.mapping.delete.DeleteMappingRequest;
 import org.elasticsearch.action.admin.indices.mapping.delete.DeleteMappingRequestBuilder;
@@ -89,14 +85,22 @@ import org.elasticsearch.action.admin.indices.refresh.RefreshAction;
 import org.elasticsearch.action.admin.indices.refresh.RefreshRequest;
 import org.elasticsearch.action.admin.indices.refresh.RefreshRequestBuilder;
 import org.elasticsearch.action.admin.indices.refresh.RefreshResponse;
+import org.elasticsearch.action.admin.indices.recovery.RecoveryAction;
+import org.elasticsearch.action.admin.indices.recovery.RecoveryRequest;
+import org.elasticsearch.action.admin.indices.recovery.RecoveryRequestBuilder;
+import org.elasticsearch.action.admin.indices.recovery.RecoveryResponse;
 import org.elasticsearch.action.admin.indices.segments.IndicesSegmentResponse;
 import org.elasticsearch.action.admin.indices.segments.IndicesSegmentsAction;
 import org.elasticsearch.action.admin.indices.segments.IndicesSegmentsRequest;
 import org.elasticsearch.action.admin.indices.segments.IndicesSegmentsRequestBuilder;
-import org.elasticsearch.action.admin.indices.settings.UpdateSettingsAction;
-import org.elasticsearch.action.admin.indices.settings.UpdateSettingsRequest;
-import org.elasticsearch.action.admin.indices.settings.UpdateSettingsRequestBuilder;
-import org.elasticsearch.action.admin.indices.settings.UpdateSettingsResponse;
+import org.elasticsearch.action.admin.indices.settings.get.GetSettingsAction;
+import org.elasticsearch.action.admin.indices.settings.get.GetSettingsRequest;
+import org.elasticsearch.action.admin.indices.settings.get.GetSettingsRequestBuilder;
+import org.elasticsearch.action.admin.indices.settings.get.GetSettingsResponse;
+import org.elasticsearch.action.admin.indices.settings.put.UpdateSettingsAction;
+import org.elasticsearch.action.admin.indices.settings.put.UpdateSettingsRequest;
+import org.elasticsearch.action.admin.indices.settings.put.UpdateSettingsRequestBuilder;
+import org.elasticsearch.action.admin.indices.settings.put.UpdateSettingsResponse;
 import org.elasticsearch.action.admin.indices.stats.IndicesStatsAction;
 import org.elasticsearch.action.admin.indices.stats.IndicesStatsRequest;
 import org.elasticsearch.action.admin.indices.stats.IndicesStatsRequestBuilder;
@@ -312,21 +316,6 @@ public abstract class AbstractIndicesAdminClient implements InternalIndicesAdmin
     }
 
     @Override
-    public ActionFuture<GatewaySnapshotResponse> gatewaySnapshot(final GatewaySnapshotRequest request) {
-        return execute(GatewaySnapshotAction.INSTANCE, request);
-    }
-
-    @Override
-    public void gatewaySnapshot(final GatewaySnapshotRequest request, final ActionListener<GatewaySnapshotResponse> listener) {
-        execute(GatewaySnapshotAction.INSTANCE, request, listener);
-    }
-
-    @Override
-    public GatewaySnapshotRequestBuilder prepareGatewaySnapshot(String... indices) {
-        return new GatewaySnapshotRequestBuilder(this).setIndices(indices);
-    }
-
-    @Override
     public void getMappings(GetMappingsRequest request, ActionListener<GetMappingsResponse> listener) {
         execute(GetMappingsAction.INSTANCE, request, listener);
     }
@@ -444,6 +433,21 @@ public abstract class AbstractIndicesAdminClient implements InternalIndicesAdmin
     @Override
     public IndicesStatusRequestBuilder prepareStatus(String... indices) {
         return new IndicesStatusRequestBuilder(this).setIndices(indices);
+    }
+
+    @Override
+    public ActionFuture<RecoveryResponse> recoveries(final RecoveryRequest request) {
+        return execute(RecoveryAction.INSTANCE, request);
+    }
+
+    @Override
+    public void recoveries(final RecoveryRequest request, final ActionListener<RecoveryResponse> listener) {
+        execute(RecoveryAction.INSTANCE, request, listener);
+    }
+
+    @Override
+    public RecoveryRequestBuilder prepareRecoveries(String... indices) {
+        return new RecoveryRequestBuilder(this).setIndices(indices);
     }
 
     @Override
@@ -599,5 +603,20 @@ public abstract class AbstractIndicesAdminClient implements InternalIndicesAdmin
     @Override
     public void getWarmers(GetWarmersRequest request, ActionListener<GetWarmersResponse> listener) {
         execute(GetWarmersAction.INSTANCE, request, listener);
+    }
+
+    @Override
+    public GetSettingsRequestBuilder prepareGetSettings(String... indices) {
+        return new GetSettingsRequestBuilder(this, indices);
+    }
+
+    @Override
+    public ActionFuture<GetSettingsResponse> getSettings(GetSettingsRequest request) {
+        return execute(GetSettingsAction.INSTANCE, request);
+    }
+
+    @Override
+    public void getSettings(GetSettingsRequest request, ActionListener<GetSettingsResponse> listener) {
+        execute(GetSettingsAction.INSTANCE, request, listener);
     }
 }

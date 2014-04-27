@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -18,6 +18,7 @@
  */
 package org.elasticsearch.indices.template;
 
+import com.carrotsearch.randomizedtesting.LifecycleScope;
 import com.google.common.base.Charsets;
 import com.google.common.io.Files;
 import org.elasticsearch.action.admin.cluster.state.ClusterStateResponse;
@@ -26,25 +27,17 @@ import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.test.ElasticsearchIntegrationTest;
 import org.elasticsearch.test.ElasticsearchIntegrationTest.ClusterScope;
-import org.elasticsearch.test.ElasticsearchIntegrationTest.Scope;
-import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
 
 import java.io.File;
 import java.util.HashSet;
 import java.util.Set;
 
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 
-/**
- *
- */
-@ClusterScope(scope=Scope.TEST, numNodes=1)
+@ClusterScope(scope= ElasticsearchIntegrationTest.Scope.TEST, numNodes=1)
 public class IndexTemplateFileLoadingTests extends ElasticsearchIntegrationTest {
-
-    @Rule
-    public TemporaryFolder temporaryFolder = new TemporaryFolder();
 
     @Override
     protected Settings nodeSettings(int nodeOrdinal) {
@@ -52,7 +45,7 @@ public class IndexTemplateFileLoadingTests extends ElasticsearchIntegrationTest 
         settingsBuilder.put(super.nodeSettings(nodeOrdinal));
 
         try {
-            File directory = temporaryFolder.newFolder();
+            File directory = newTempDir(LifecycleScope.SUITE);
             settingsBuilder.put("path.conf", directory.getPath());
 
             File templatesDir = new File(directory + File.separator + "templates");
@@ -71,10 +64,22 @@ public class IndexTemplateFileLoadingTests extends ElasticsearchIntegrationTest 
         return settingsBuilder.build();
     }
 
+    @Override
+    protected int numberOfShards() {
+        //number of shards won't be set through index settings, the one from the index templates needs to be used
+        return -1;
+    }
+
+    @Override
+    protected int numberOfReplicas() {
+        //number of replicas won't be set through index settings, the one from the index templates needs to be used
+        return -1;
+    }
+
     @Test
     public void testThatLoadingTemplateFromFileWorks() throws Exception {
-        final int iters = atLeast(5);
-        Set<String> indices = new HashSet<String>();
+        final int iters = scaledRandomIntBetween(5, 20);
+        Set<String> indices = new HashSet<>();
         for (int i = 0; i < iters; i++) {
             String indexName = "foo" + randomRealisticUnicodeOfLengthBetween(0, 5);
             if (indices.contains(indexName)) {
@@ -84,9 +89,12 @@ public class IndexTemplateFileLoadingTests extends ElasticsearchIntegrationTest 
             createIndex(indexName);
             ensureYellow(); // ensuring yellow so the test fails faster if the template cannot be loaded
 
-            ClusterStateResponse stateResponse = client().admin().cluster().prepareState().setFilterIndices(indexName).get();
+            ClusterStateResponse stateResponse = client().admin().cluster().prepareState().setIndices(indexName).get();
             assertThat(stateResponse.getState().getMetaData().indices().get(indexName).getNumberOfShards(), is(10));
             assertThat(stateResponse.getState().getMetaData().indices().get(indexName).getNumberOfReplicas(), is(0));
+            assertThat(stateResponse.getState().getMetaData().indices().get(indexName).aliases().size(), equalTo(1));
+            String aliasName = indexName + "-alias";
+            assertThat(stateResponse.getState().getMetaData().indices().get(indexName).aliases().get(aliasName).alias(), equalTo(aliasName));
         }
     }
 }

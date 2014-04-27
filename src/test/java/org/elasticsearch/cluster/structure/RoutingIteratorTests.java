@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -21,6 +21,7 @@ package org.elasticsearch.cluster.structure;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import org.elasticsearch.cluster.ClusterName;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.metadata.IndexMetaData;
 import org.elasticsearch.cluster.metadata.MetaData;
@@ -36,7 +37,6 @@ import org.elasticsearch.test.ElasticsearchAllocationTestCase;
 import org.junit.Test;
 
 import static org.elasticsearch.cluster.routing.ShardRoutingState.INITIALIZING;
-import static org.elasticsearch.cluster.routing.allocation.RoutingAllocationTests.newNode;
 import static org.elasticsearch.common.settings.ImmutableSettings.settingsBuilder;
 import static org.hamcrest.Matchers.*;
 
@@ -44,7 +44,8 @@ public class RoutingIteratorTests extends ElasticsearchAllocationTestCase {
 
     @Test
     public void testEmptyIterator() {
-        ShardIterator shardIterator = new PlainShardIterator(new ShardId("test1", 0), ImmutableList.<ShardRouting>of(), 0);
+        ShardShuffler shuffler = new RotationShardShuffler(0);
+        ShardIterator shardIterator = new PlainShardIterator(new ShardId("test1", 0), shuffler.shuffle(ImmutableList.<ShardRouting>of()));
         assertThat(shardIterator.remaining(), equalTo(0));
         assertThat(shardIterator.firstOrNull(), nullValue());
         assertThat(shardIterator.remaining(), equalTo(0));
@@ -53,7 +54,7 @@ public class RoutingIteratorTests extends ElasticsearchAllocationTestCase {
         assertThat(shardIterator.nextOrNull(), nullValue());
         assertThat(shardIterator.remaining(), equalTo(0));
 
-        shardIterator = new PlainShardIterator(new ShardId("test1", 0), ImmutableList.<ShardRouting>of(), 1);
+        shardIterator = new PlainShardIterator(new ShardId("test1", 0), shuffler.shuffle(ImmutableList.<ShardRouting>of()));
         assertThat(shardIterator.remaining(), equalTo(0));
         assertThat(shardIterator.firstOrNull(), nullValue());
         assertThat(shardIterator.remaining(), equalTo(0));
@@ -62,7 +63,7 @@ public class RoutingIteratorTests extends ElasticsearchAllocationTestCase {
         assertThat(shardIterator.nextOrNull(), nullValue());
         assertThat(shardIterator.remaining(), equalTo(0));
 
-        shardIterator = new PlainShardIterator(new ShardId("test1", 0), ImmutableList.<ShardRouting>of(), 2);
+        shardIterator = new PlainShardIterator(new ShardId("test1", 0), shuffler.shuffle(ImmutableList.<ShardRouting>of()));
         assertThat(shardIterator.remaining(), equalTo(0));
         assertThat(shardIterator.firstOrNull(), nullValue());
         assertThat(shardIterator.remaining(), equalTo(0));
@@ -71,7 +72,7 @@ public class RoutingIteratorTests extends ElasticsearchAllocationTestCase {
         assertThat(shardIterator.nextOrNull(), nullValue());
         assertThat(shardIterator.remaining(), equalTo(0));
 
-        shardIterator = new PlainShardIterator(new ShardId("test1", 0), ImmutableList.<ShardRouting>of(), 3);
+        shardIterator = new PlainShardIterator(new ShardId("test1", 0), shuffler.shuffle(ImmutableList.<ShardRouting>of()));
         assertThat(shardIterator.remaining(), equalTo(0));
         assertThat(shardIterator.firstOrNull(), nullValue());
         assertThat(shardIterator.remaining(), equalTo(0));
@@ -262,7 +263,7 @@ public class RoutingIteratorTests extends ElasticsearchAllocationTestCase {
                 .addAsNew(metaData.index("test"))
                 .build();
 
-        ClusterState clusterState = ClusterState.builder().metaData(metaData).routingTable(routingTable).build();
+        ClusterState clusterState = ClusterState.builder(ClusterName.DEFAULT).metaData(metaData).routingTable(routingTable).build();
 
         clusterState = ClusterState.builder(clusterState).nodes(DiscoveryNodes.builder()
                 .put(newNode("node1", ImmutableMap.of("rack_id", "rack_1", "zone", "zone1")))
@@ -311,7 +312,7 @@ public class RoutingIteratorTests extends ElasticsearchAllocationTestCase {
                 .addAsNew(metaData.index("test"))
                 .build();
 
-        ClusterState clusterState = ClusterState.builder().metaData(metaData).routingTable(routingTable).build();
+        ClusterState clusterState = ClusterState.builder(ClusterName.DEFAULT).metaData(metaData).routingTable(routingTable).build();
 
         clusterState = ClusterState.builder(clusterState).nodes(DiscoveryNodes.builder()
                 .put(newNode("node1"))

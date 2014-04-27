@@ -1,21 +1,21 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements. See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations under
- * the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
-
 package org.elasticsearch.test.rest.support;
 
 import com.google.common.collect.Maps;
@@ -80,7 +80,7 @@ public final class FileUtils {
         //try within classpath with and without file suffix (as it could be a single test suite)
         URL resource = findResource(path, optionalFileSuffix);
         if (resource == null) {
-            //try within classpath with optional prefix: /rest-spec/test (or /rest-test/api) is optional
+            //try within classpath with optional prefix: /rest-api-spec/test (or /rest-api-spec/api) is optional
             String newPath = optionalPathPrefix + "/" + path;
             resource = findResource(newPath, optionalFileSuffix);
             if (resource == null) {
@@ -116,8 +116,7 @@ public final class FileUtils {
 
     private static void collectFiles(final File file, final String fileSuffix, final Map<String, Set<File>> files) {
         if (file.isFile()) {
-            // '.' is uses as separator internally and not expected to be within suite or test names, better replace it
-            String groupName = file.getParentFile().getName().replace('.', '_');
+            String groupName = file.getParentFile().getName();
             Set<File> filesSet = files.get(groupName);
             if (filesSet == null) {
                 filesSet = Sets.newHashSet();

@@ -1,29 +1,30 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements. See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations under
- * the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
-
 package org.elasticsearch.action.percolate;
 
 import com.google.common.collect.Lists;
-import org.elasticsearch.ElasticSearchParseException;
+import org.elasticsearch.ElasticsearchIllegalArgumentException;
+import org.elasticsearch.ElasticsearchParseException;
 import org.elasticsearch.action.ActionRequest;
 import org.elasticsearch.action.ActionRequestValidationException;
 import org.elasticsearch.action.get.GetRequest;
-import org.elasticsearch.action.support.IgnoreIndices;
+import org.elasticsearch.action.support.IndicesOptions;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.bytes.BytesArray;
 import org.elasticsearch.common.bytes.BytesReference;
@@ -47,7 +48,7 @@ public class MultiPercolateRequest extends ActionRequest<MultiPercolateRequest> 
 
     private String[] indices;
     private String documentType;
-    private IgnoreIndices ignoreIndices = IgnoreIndices.DEFAULT;
+    private IndicesOptions indicesOptions = IndicesOptions.strict();
     private List<PercolateRequest> requests = Lists.newArrayList();
 
     public MultiPercolateRequest add(PercolateRequestBuilder requestBuilder) {
@@ -61,18 +62,18 @@ public class MultiPercolateRequest extends ActionRequest<MultiPercolateRequest> 
         if (request.documentType() == null && documentType != null) {
             request.documentType(documentType);
         }
-        if (request.ignoreIndices() == IgnoreIndices.DEFAULT && ignoreIndices != IgnoreIndices.DEFAULT) {
-            request.ignoreIndices(ignoreIndices);
+        if (request.indicesOptions() == IndicesOptions.strict() && indicesOptions != IndicesOptions.strict()) {
+            request.indicesOptions(indicesOptions);
         }
         requests.add(request);
         return this;
     }
 
     public MultiPercolateRequest add(byte[] data, int from, int length, boolean contentUnsafe) throws Exception {
-        return add(new BytesArray(data, from, length), contentUnsafe);
+        return add(new BytesArray(data, from, length), contentUnsafe, true);
     }
 
-    public MultiPercolateRequest add(BytesReference data, boolean contentUnsafe) throws Exception {
+    public MultiPercolateRequest add(BytesReference data, boolean contentUnsafe, boolean allowExplicitIndex) throws Exception {
         XContent xContent = XContentFactory.xContent(data);
         int from = 0;
         int length = data.length();
@@ -95,14 +96,13 @@ public class MultiPercolateRequest extends ActionRequest<MultiPercolateRequest> 
             if (documentType != null) {
                 percolateRequest.documentType(documentType);
             }
-            if (ignoreIndices != IgnoreIndices.DEFAULT) {
-                percolateRequest.ignoreIndices(ignoreIndices);
+            if (indicesOptions != IndicesOptions.strict()) {
+                percolateRequest.indicesOptions(indicesOptions);
             }
 
             // now parse the action
             if (nextMarker - from > 0) {
-                XContentParser parser = xContent.createParser(data.slice(from, nextMarker - from));
-                try {
+                try (XContentParser parser = xContent.createParser(data.slice(from, nextMarker - from))) {
                     // Move to START_OBJECT, if token is null, its an empty data
                     XContentParser.Token token = parser.nextToken();
                     if (token != null) {
@@ -110,24 +110,22 @@ public class MultiPercolateRequest extends ActionRequest<MultiPercolateRequest> 
                         assert token == XContentParser.Token.START_OBJECT;
                         token = parser.nextToken();
                         if (token != XContentParser.Token.FIELD_NAME) {
-                            throw new ElasticSearchParseException("Expected field");
+                            throw new ElasticsearchParseException("Expected field");
                         }
                         token = parser.nextToken();
                         if (token != XContentParser.Token.START_OBJECT) {
-                            throw new ElasticSearchParseException("expected start object");
+                            throw new ElasticsearchParseException("expected start object");
                         }
                         String percolateAction = parser.currentName();
                         if ("percolate".equals(percolateAction)) {
-                            parsePercolateAction(parser, percolateRequest);
+                            parsePercolateAction(parser, percolateRequest, allowExplicitIndex);
                         } else if ("count".equals(percolateAction)) {
                             percolateRequest.onlyCount(true);
-                            parsePercolateAction(parser, percolateRequest);
+                            parsePercolateAction(parser, percolateRequest, allowExplicitIndex);
                         } else {
-                            throw new ElasticSearchParseException(percolateAction + " isn't a supported percolate operation");
+                            throw new ElasticsearchParseException(percolateAction + " isn't a supported percolate operation");
                         }
                     }
-                } finally {
-                    parser.close();
                 }
             }
 
@@ -150,10 +148,10 @@ public class MultiPercolateRequest extends ActionRequest<MultiPercolateRequest> 
         return this;
     }
 
-    private void parsePercolateAction(XContentParser parser, PercolateRequest percolateRequest) throws IOException {
+    private void parsePercolateAction(XContentParser parser, PercolateRequest percolateRequest, boolean allowExplicitIndex) throws IOException {
         String globalIndex = indices != null && indices.length > 0 ? indices[0] : null;
 
-        Map<String, Object> header = new HashMap<String, Object>();
+        Map<String, Object> header = new HashMap<>();
 
         String currentFieldName = null;
         XContentParser.Token token;
@@ -167,6 +165,11 @@ public class MultiPercolateRequest extends ActionRequest<MultiPercolateRequest> 
             }
         }
 
+        boolean ignoreUnavailable = IndicesOptions.strict().ignoreUnavailable();
+        boolean allowNoIndices = IndicesOptions.strict().allowNoIndices();
+        boolean expandWildcardsOpen = IndicesOptions.strict().expandWildcardsOpen();
+        boolean expandWildcardsClosed = IndicesOptions.strict().expandWildcardsClosed();
+
         if (header.containsKey("id")) {
             GetRequest getRequest = new GetRequest(globalIndex);
             percolateRequest.getRequest(getRequest);
@@ -176,6 +179,9 @@ public class MultiPercolateRequest extends ActionRequest<MultiPercolateRequest> 
                     getRequest.id((String) value);
                     header.put("id", entry.getValue());
                 } else if ("index".equals(entry.getKey()) || "indices".equals(entry.getKey())) {
+                    if (!allowExplicitIndex) {
+                        throw new ElasticsearchIllegalArgumentException("explicit index in multi percolate is not allowed");
+                    }
                     getRequest.index((String) value);
                 } else if ("type".equals(entry.getKey())) {
                     getRequest.type((String) value);
@@ -195,8 +201,27 @@ public class MultiPercolateRequest extends ActionRequest<MultiPercolateRequest> 
                     percolateRequest.preference((String) value);
                 } else if ("percolate_routing".equals(entry.getKey()) || "percolateRouting".equals(entry.getKey())) {
                     percolateRequest.routing((String) value);
-                } else if ("ignore_indices".equals(entry.getKey()) || "ignoreIndices".equals(entry.getKey())) {
-                    percolateRequest.ignoreIndices(IgnoreIndices.fromString((String) value));
+                } else if ("ignore_unavailable".equals(currentFieldName) || "ignoreUnavailable".equals(currentFieldName)) {
+                    ignoreUnavailable = Boolean.valueOf((String) value);
+                } else if ("allow_no_indices".equals(currentFieldName) || "allowNoIndices".equals(currentFieldName)) {
+                    allowNoIndices = Boolean.valueOf((String) value);
+                } else if ("expand_wildcards".equals(currentFieldName) || "expandWildcards".equals(currentFieldName)) {
+                    String[] wildcards;
+                    if (value instanceof String[]) {
+                        wildcards = (String[]) value;
+                    } else {
+                        wildcards = Strings.splitStringByCommaToArray((String) value);
+                    }
+
+                    for (String wildcard : wildcards) {
+                        if ("open".equals(wildcard)) {
+                            expandWildcardsOpen = true;
+                        } else if ("closed".equals(wildcard)) {
+                            expandWildcardsClosed = true;
+                        } else {
+                            throw new ElasticsearchIllegalArgumentException("No valid expand wildcard value [" + wildcard + "]");
+                        }
+                    }
                 }
             }
 
@@ -217,6 +242,9 @@ public class MultiPercolateRequest extends ActionRequest<MultiPercolateRequest> 
             for (Map.Entry<String, Object> entry : header.entrySet()) {
                 Object value = entry.getValue();
                 if ("index".equals(entry.getKey()) || "indices".equals(entry.getKey())) {
+                    if (!allowExplicitIndex) {
+                        throw new ElasticsearchIllegalArgumentException("explicit index in multi percolate is not allowed");
+                    }
                     if (value instanceof String[]) {
                         percolateRequest.indices((String[]) value);
                     } else {
@@ -228,15 +256,35 @@ public class MultiPercolateRequest extends ActionRequest<MultiPercolateRequest> 
                     percolateRequest.preference((String) value);
                 } else if ("routing".equals(entry.getKey())) {
                     percolateRequest.routing((String) value);
-                } else if ("ignore_indices".equals(entry.getKey()) || "ignoreIndices".equals(entry.getKey())) {
-                    percolateRequest.ignoreIndices(IgnoreIndices.fromString((String) value));
+                } else if ("ignore_unavailable".equals(currentFieldName) || "ignoreUnavailable".equals(currentFieldName)) {
+                    ignoreUnavailable = Boolean.valueOf((String) value);
+                } else if ("allow_no_indices".equals(currentFieldName) || "allowNoIndices".equals(currentFieldName)) {
+                    allowNoIndices = Boolean.valueOf((String) value);
+                } else if ("expand_wildcards".equals(currentFieldName) || "expandWildcards".equals(currentFieldName)) {
+                    String[] wildcards;
+                    if (value instanceof String[]) {
+                        wildcards = (String[]) value;
+                    } else {
+                        wildcards = Strings.splitStringByCommaToArray((String) value);
+                    }
+
+                    for (String wildcard : wildcards) {
+                        if ("open".equals(wildcard)) {
+                            expandWildcardsOpen = true;
+                        } else if ("closed".equals(wildcard)) {
+                            expandWildcardsClosed = true;
+                        } else {
+                            throw new ElasticsearchIllegalArgumentException("No valid expand wildcard value [" + wildcard + "]");
+                        }
+                    }
                 }
             }
         }
+        percolateRequest.indicesOptions(IndicesOptions.fromOptions(ignoreUnavailable, allowNoIndices, expandWildcardsOpen, expandWildcardsClosed));
     }
 
     private String[] parseArray(XContentParser parser) throws IOException {
-        final List<String> list = new ArrayList<String>();
+        final List<String> list = new ArrayList<>();
         assert parser.currentToken() == XContentParser.Token.START_ARRAY;
         while (parser.nextToken() != XContentParser.Token.END_ARRAY) {
             list.add(parser.text());
@@ -257,12 +305,12 @@ public class MultiPercolateRequest extends ActionRequest<MultiPercolateRequest> 
         return this.requests;
     }
 
-    public IgnoreIndices ignoreIndices() {
-        return ignoreIndices;
+    public IndicesOptions indicesOptions() {
+        return indicesOptions;
     }
 
-    public MultiPercolateRequest ignoreIndices(IgnoreIndices ignoreIndices) {
-        this.ignoreIndices = ignoreIndices;
+    public MultiPercolateRequest indicesOptions(IndicesOptions indicesOptions) {
+        this.indicesOptions = indicesOptions;
         return this;
     }
 
@@ -308,7 +356,7 @@ public class MultiPercolateRequest extends ActionRequest<MultiPercolateRequest> 
         super.readFrom(in);
         indices = in.readStringArray();
         documentType = in.readOptionalString();
-        ignoreIndices = IgnoreIndices.fromId(in.readByte());
+        indicesOptions = IndicesOptions.readIndicesOptions(in);
         int size = in.readVInt();
         for (int i = 0; i < size; i++) {
             PercolateRequest request = new PercolateRequest();
@@ -322,7 +370,7 @@ public class MultiPercolateRequest extends ActionRequest<MultiPercolateRequest> 
         super.writeTo(out);
         out.writeStringArrayNullable(indices);
         out.writeOptionalString(documentType);
-        out.writeByte(ignoreIndices.id());
+        indicesOptions.writeIndicesOptions(out);
         out.writeVInt(requests.size());
         for (PercolateRequest request : requests) {
             request.writeTo(out);

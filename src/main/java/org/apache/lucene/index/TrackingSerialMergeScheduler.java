@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -46,8 +46,11 @@ public class TrackingSerialMergeScheduler extends MergeScheduler {
     private final Set<OnGoingMerge> onGoingMerges = ConcurrentCollections.newConcurrentSet();
     private final Set<OnGoingMerge> readOnlyOnGoingMerges = Collections.unmodifiableSet(onGoingMerges);
 
-    public TrackingSerialMergeScheduler(ESLogger logger) {
+    private final int maxMergeAtOnce;
+
+    public TrackingSerialMergeScheduler(ESLogger logger, int maxMergeAtOnce) {
         this.logger = logger;
+        this.maxMergeAtOnce = maxMergeAtOnce;
     }
 
     public long totalMerges() {
@@ -89,7 +92,8 @@ public class TrackingSerialMergeScheduler extends MergeScheduler {
      */
     @Override
     synchronized public void merge(IndexWriter writer) throws CorruptIndexException, IOException {
-        while (true) {
+        int cycle = 0;
+        while (cycle++ < maxMergeAtOnce) {
             MergePolicy.OneMerge merge = writer.getNextMerge();
             if (merge == null)
                 break;

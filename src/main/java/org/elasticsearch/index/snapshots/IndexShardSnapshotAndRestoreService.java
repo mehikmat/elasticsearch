@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -27,7 +27,7 @@ import org.elasticsearch.common.unit.ByteSizeValue;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.index.deletionpolicy.SnapshotIndexCommit;
 import org.elasticsearch.index.engine.SnapshotFailedEngineException;
-import org.elasticsearch.index.gateway.RecoveryStatus;
+import org.elasticsearch.indices.recovery.RecoveryState;
 import org.elasticsearch.index.settings.IndexSettings;
 import org.elasticsearch.index.shard.AbstractIndexShardComponent;
 import org.elasticsearch.index.shard.IndexShardState;
@@ -90,7 +90,7 @@ public class IndexShardSnapshotAndRestoreService extends AbstractIndexShardCompo
                     logger.debug(sb.toString());
                 }
             } finally {
-                snapshotIndexCommit.release();
+                snapshotIndexCommit.close();
             }
         } catch (SnapshotFailedEngineException e) {
             throw e;
@@ -104,9 +104,9 @@ public class IndexShardSnapshotAndRestoreService extends AbstractIndexShardCompo
     /**
      * Restores shard from {@link RestoreSource} associated with this shard in routing table
      *
-     * @param recoveryStatus recovery status
+     * @param recoveryState recovery state
      */
-    public void restore(final RecoveryStatus recoveryStatus) {
+    public void restore(final RecoveryState recoveryState) {
         RestoreSource restoreSource = indexShard.routingEntry().restoreSource();
         if (restoreSource == null) {
             throw new IndexShardRestoreFailedException(shardId, "empty restore source");
@@ -120,7 +120,7 @@ public class IndexShardSnapshotAndRestoreService extends AbstractIndexShardCompo
             if (!shardId.getIndex().equals(restoreSource.index())) {
                 snapshotShardId = new ShardId(restoreSource.index(), shardId.id());
             }
-            indexShardRepository.restore(restoreSource.snapshotId(), shardId, snapshotShardId, recoveryStatus);
+            indexShardRepository.restore(restoreSource.snapshotId(), shardId, snapshotShardId, recoveryState);
             restoreService.indexShardRestoreCompleted(restoreSource.snapshotId(), shardId);
         } catch (Throwable t) {
             throw new IndexShardRestoreFailedException(shardId, "restore failed", t);

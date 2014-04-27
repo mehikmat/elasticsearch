@@ -1,21 +1,21 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements. See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations under
- * the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
-
 package org.elasticsearch.test.rest.test;
 
 import org.elasticsearch.common.xcontent.yaml.YamlXContent;
@@ -37,7 +37,7 @@ public class AssertionParsersTests extends AbstractParserTests {
         );
 
         IsTrueParser isTrueParser = new IsTrueParser();
-        IsTrueAssertion trueAssertion = isTrueParser.parse(new RestTestSuiteParseContext("api", "suite", parser, "0.90.7"));
+        IsTrueAssertion trueAssertion = isTrueParser.parse(new RestTestSuiteParseContext("api", "suite", parser));
 
         assertThat(trueAssertion, notNullValue());
         assertThat(trueAssertion.getField(), equalTo("get.fields._timestamp"));
@@ -50,7 +50,7 @@ public class AssertionParsersTests extends AbstractParserTests {
         );
 
         IsFalseParser isFalseParser = new IsFalseParser();
-        IsFalseAssertion falseAssertion = isFalseParser.parse(new RestTestSuiteParseContext("api", "suite", parser, "0.90.7"));
+        IsFalseAssertion falseAssertion = isFalseParser.parse(new RestTestSuiteParseContext("api", "suite", parser));
 
         assertThat(falseAssertion, notNullValue());
         assertThat(falseAssertion.getField(), equalTo("docs.1._source"));
@@ -63,7 +63,7 @@ public class AssertionParsersTests extends AbstractParserTests {
         );
 
         GreaterThanParser greaterThanParser = new GreaterThanParser();
-        GreaterThanAssertion greaterThanAssertion = greaterThanParser.parse(new RestTestSuiteParseContext("api", "suite", parser, "0.90.7"));
+        GreaterThanAssertion greaterThanAssertion = greaterThanParser.parse(new RestTestSuiteParseContext("api", "suite", parser));
         assertThat(greaterThanAssertion, notNullValue());
         assertThat(greaterThanAssertion.getField(), equalTo("field"));
         assertThat(greaterThanAssertion.getExpectedValue(), instanceOf(Integer.class));
@@ -77,7 +77,7 @@ public class AssertionParsersTests extends AbstractParserTests {
         );
 
         LessThanParser lessThanParser = new LessThanParser();
-        LessThanAssertion lessThanAssertion = lessThanParser.parse(new RestTestSuiteParseContext("api", "suite", parser, "0.90.7"));
+        LessThanAssertion lessThanAssertion = lessThanParser.parse(new RestTestSuiteParseContext("api", "suite", parser));
         assertThat(lessThanAssertion, notNullValue());
         assertThat(lessThanAssertion.getField(), equalTo("field"));
         assertThat(lessThanAssertion.getExpectedValue(), instanceOf(Integer.class));
@@ -91,7 +91,7 @@ public class AssertionParsersTests extends AbstractParserTests {
         );
 
         LengthParser lengthParser = new LengthParser();
-        LengthAssertion lengthAssertion = lengthParser.parse(new RestTestSuiteParseContext("api", "suite", parser, "0.90.7"));
+        LengthAssertion lengthAssertion = lengthParser.parse(new RestTestSuiteParseContext("api", "suite", parser));
         assertThat(lengthAssertion, notNullValue());
         assertThat(lengthAssertion.getField(), equalTo("_id"));
         assertThat(lengthAssertion.getExpectedValue(), instanceOf(Integer.class));
@@ -106,7 +106,7 @@ public class AssertionParsersTests extends AbstractParserTests {
         );
 
         MatchParser matchParser = new MatchParser();
-        MatchAssertion matchAssertion = matchParser.parse(new RestTestSuiteParseContext("api", "suite", parser, "0.90.7"));
+        MatchAssertion matchAssertion = matchParser.parse(new RestTestSuiteParseContext("api", "suite", parser));
 
         assertThat(matchAssertion, notNullValue());
         assertThat(matchAssertion.getField(), equalTo("field"));
@@ -122,7 +122,7 @@ public class AssertionParsersTests extends AbstractParserTests {
         );
 
         MatchParser matchParser = new MatchParser();
-        MatchAssertion matchAssertion = matchParser.parse(new RestTestSuiteParseContext("api", "suite", parser, "0.90.7"));
+        MatchAssertion matchAssertion = matchParser.parse(new RestTestSuiteParseContext("api", "suite", parser));
 
         assertThat(matchAssertion, notNullValue());
         assertThat(matchAssertion.getField(), equalTo("foo"));
@@ -138,7 +138,7 @@ public class AssertionParsersTests extends AbstractParserTests {
         );
 
         MatchParser matchParser = new MatchParser();
-        MatchAssertion matchAssertion = matchParser.parse(new RestTestSuiteParseContext("api", "suite", parser, "0.90.7"));
+        MatchAssertion matchAssertion = matchParser.parse(new RestTestSuiteParseContext("api", "suite", parser));
 
         assertThat(matchAssertion, notNullValue());
         assertThat(matchAssertion.getField(), equalTo("matches"));
@@ -157,7 +157,7 @@ public class AssertionParsersTests extends AbstractParserTests {
         );
 
         MatchParser matchParser = new MatchParser();
-        MatchAssertion matchAssertion = matchParser.parse(new RestTestSuiteParseContext("api", "suite", parser, "0.90.7"));
+        MatchAssertion matchAssertion = matchParser.parse(new RestTestSuiteParseContext("api", "suite", parser));
 
         assertThat(matchAssertion, notNullValue());
         assertThat(matchAssertion.getField(), equalTo("_source"));

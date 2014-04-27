@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -21,7 +21,7 @@ package org.elasticsearch.common.xcontent;
 
 import com.google.common.base.Charsets;
 import com.google.common.collect.Maps;
-import org.elasticsearch.ElasticSearchParseException;
+import org.elasticsearch.ElasticsearchParseException;
 import org.elasticsearch.common.bytes.BytesArray;
 import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.collect.Tuple;
@@ -70,7 +70,7 @@ public class XContentHelper {
         }
     }
 
-    public static Tuple<XContentType, Map<String, Object>> convertToMap(BytesReference bytes, boolean ordered) throws ElasticSearchParseException {
+    public static Tuple<XContentType, Map<String, Object>> convertToMap(BytesReference bytes, boolean ordered) throws ElasticsearchParseException {
         if (bytes.hasArray()) {
             return convertToMap(bytes.array(), bytes.arrayOffset(), bytes.length(), ordered);
         }
@@ -93,15 +93,15 @@ public class XContentHelper {
                 return Tuple.tuple(contentType, parser.mapAndClose());
             }
         } catch (IOException e) {
-            throw new ElasticSearchParseException("Failed to parse content to map", e);
+            throw new ElasticsearchParseException("Failed to parse content to map", e);
         }
     }
 
-    public static Tuple<XContentType, Map<String, Object>> convertToMap(byte[] data, boolean ordered) throws ElasticSearchParseException {
+    public static Tuple<XContentType, Map<String, Object>> convertToMap(byte[] data, boolean ordered) throws ElasticsearchParseException {
         return convertToMap(data, 0, data.length, ordered);
     }
 
-    public static Tuple<XContentType, Map<String, Object>> convertToMap(byte[] data, int offset, int length, boolean ordered) throws ElasticSearchParseException {
+    public static Tuple<XContentType, Map<String, Object>> convertToMap(byte[] data, int offset, int length, boolean ordered) throws ElasticsearchParseException {
         try {
             XContentParser parser;
             XContentType contentType;
@@ -121,7 +121,7 @@ public class XContentHelper {
                 return Tuple.tuple(contentType, parser.mapAndClose());
             }
         } catch (IOException e) {
-            throw new ElasticSearchParseException("Failed to parse content to map", e);
+            throw new ElasticsearchParseException("Failed to parse content to map", e);
         }
     }
 
@@ -271,16 +271,16 @@ public class XContentHelper {
     }
 
     public static void copyCurrentStructure(XContentGenerator generator, XContentParser parser) throws IOException {
-        XContentParser.Token t = parser.currentToken();
+        XContentParser.Token token = parser.currentToken();
 
         // Let's handle field-name separately first
-        if (t == XContentParser.Token.FIELD_NAME) {
+        if (token == XContentParser.Token.FIELD_NAME) {
             generator.writeFieldName(parser.currentName());
-            t = parser.nextToken();
+            token = parser.nextToken();
             // fall-through to copy the associated value
         }
 
-        switch (t) {
+        switch (token) {
             case START_ARRAY:
                 generator.writeStartArray();
                 while (parser.nextToken() != XContentParser.Token.END_ARRAY) {
@@ -363,12 +363,9 @@ public class XContentHelper {
             if (contentType == rawBuilder.contentType()) {
                 Streams.copy(compressedStreamInput, rawBuilder.stream());
             } else {
-                XContentParser parser = XContentFactory.xContent(contentType).createParser(compressedStreamInput);
-                try {
+                try (XContentParser parser = XContentFactory.xContent(contentType).createParser(compressedStreamInput)) {
                     parser.nextToken();
                     rawBuilder.copyCurrentStructure(parser);
-                } finally {
-                    parser.close();
                 }
             }
         } else {
@@ -376,12 +373,9 @@ public class XContentHelper {
             if (contentType == rawBuilder.contentType()) {
                 source.writeTo(rawBuilder.stream());
             } else {
-                XContentParser parser = XContentFactory.xContent(contentType).createParser(source);
-                try {
+                try (XContentParser parser = XContentFactory.xContent(contentType).createParser(source)) {
                     parser.nextToken();
                     rawBuilder.copyCurrentStructure(parser);
-                } finally {
-                    parser.close();
                 }
             }
         }
@@ -400,13 +394,10 @@ public class XContentHelper {
             if (contentType == builder.contentType()) {
                 builder.rawField(field, compressedStreamInput);
             } else {
-                XContentParser parser = XContentFactory.xContent(contentType).createParser(compressedStreamInput);
-                try {
+                try (XContentParser parser = XContentFactory.xContent(contentType).createParser(compressedStreamInput)) {
                     parser.nextToken();
                     builder.field(field);
                     builder.copyCurrentStructure(parser);
-                } finally {
-                    parser.close();
                 }
             }
         } else {
@@ -414,13 +405,10 @@ public class XContentHelper {
             if (contentType == builder.contentType()) {
                 builder.rawField(field, source);
             } else {
-                XContentParser parser = XContentFactory.xContent(contentType).createParser(source);
-                try {
+                try (XContentParser parser = XContentFactory.xContent(contentType).createParser(source)) {
                     parser.nextToken();
                     builder.field(field);
                     builder.copyCurrentStructure(parser);
-                } finally {
-                    parser.close();
                 }
             }
         }

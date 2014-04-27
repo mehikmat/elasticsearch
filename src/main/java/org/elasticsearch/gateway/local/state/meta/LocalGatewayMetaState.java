@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -22,7 +22,7 @@ package org.elasticsearch.gateway.local.state.meta;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import org.apache.lucene.util.IOUtils;
-import org.elasticsearch.ElasticSearchIllegalArgumentException;
+import org.elasticsearch.ElasticsearchIllegalArgumentException;
 import org.elasticsearch.Version;
 import org.elasticsearch.cluster.ClusterChangedEvent;
 import org.elasticsearch.cluster.ClusterStateListener;
@@ -90,7 +90,7 @@ public class LocalGatewayMetaState extends AbstractComponent implements ClusterS
             } else if ("closed".equalsIgnoreCase(value)) {
                 return CLOSED;
             } else {
-                throw new ElasticSearchIllegalArgumentException("failed to parse [" + value + "], not a valid auto dangling import type");
+                throw new ElasticsearchIllegalArgumentException("failed to parse [" + value + "], not a valid auto dangling import type");
             }
         }
     }
@@ -132,12 +132,14 @@ public class LocalGatewayMetaState extends AbstractComponent implements ClusterS
             formatParams = new ToXContent.MapParams(params);
             Map<String, String> globalOnlyParams = Maps.newHashMap();
             globalOnlyParams.put("binary", "true");
-            globalOnlyParams.put(MetaData.GLOBAL_PERSISTENT_ONLY_PARAM, "true");
+            globalOnlyParams.put(MetaData.PERSISTENT_ONLY_PARAM, "true");
+            globalOnlyParams.put(MetaData.GLOBAL_ONLY_PARAM, "true");
             globalOnlyFormatParams = new ToXContent.MapParams(globalOnlyParams);
         } else {
             formatParams = ToXContent.EMPTY_PARAMS;
             Map<String, String> globalOnlyParams = Maps.newHashMap();
-            globalOnlyParams.put(MetaData.GLOBAL_PERSISTENT_ONLY_PARAM, "true");
+            globalOnlyParams.put(MetaData.PERSISTENT_ONLY_PARAM, "true");
+            globalOnlyParams.put(MetaData.GLOBAL_ONLY_PARAM, "true");
             globalOnlyFormatParams = new ToXContent.MapParams(globalOnlyParams);
         }
 
@@ -356,7 +358,7 @@ public class LocalGatewayMetaState extends AbstractComponent implements ClusterS
             try {
                 fos = new FileOutputStream(stateFile);
                 BytesReference bytes = builder.bytes();
-                fos.write(bytes.array(), bytes.arrayOffset(), bytes.length());
+                bytes.writeTo(fos);
                 fos.getChannel().force(true);
                 fos.close();
                 wroteAtLeastOnce = true;
@@ -412,7 +414,7 @@ public class LocalGatewayMetaState extends AbstractComponent implements ClusterS
             try {
                 fos = new FileOutputStream(stateFile);
                 BytesReference bytes = builder.bytes();
-                fos.write(bytes.array(), bytes.arrayOffset(), bytes.length());
+                bytes.writeTo(fos);
                 fos.getChannel().force(true);
                 fos.close();
                 wroteAtLeastOnce = true;
@@ -589,8 +591,7 @@ public class LocalGatewayMetaState extends AbstractComponent implements ClusterS
                         if (data.length == 0) {
                             continue;
                         }
-                        XContentParser parser = XContentHelper.createParser(data, 0, data.length);
-                        try {
+                        try (XContentParser parser = XContentHelper.createParser(data, 0, data.length)) {
                             String currentFieldName = null;
                             XContentParser.Token token = parser.nextToken();
                             if (token != null) {
@@ -608,8 +609,6 @@ public class LocalGatewayMetaState extends AbstractComponent implements ClusterS
                                     }
                                 }
                             }
-                        } finally {
-                            parser.close();
                         }
                         index = fileIndex;
                         metaDataFile = stateFile;

@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,7 +19,7 @@
 
 package org.elasticsearch.action.admin.cluster.stats;
 
-import org.elasticsearch.ElasticSearchException;
+import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthStatus;
 import org.elasticsearch.action.admin.cluster.health.ClusterIndexHealth;
 import org.elasticsearch.action.admin.cluster.node.info.NodeInfo;
@@ -83,7 +83,7 @@ public class TransportClusterStatsAction extends TransportNodesOperationAction<C
 
     @Override
     protected ClusterStatsResponse newResponse(ClusterStatsRequest clusterStatsRequest, AtomicReferenceArray responses) {
-        final List<ClusterStatsNodeResponse> nodeStats = new ArrayList<ClusterStatsNodeResponse>(responses.length());
+        final List<ClusterStatsNodeResponse> nodeStats = new ArrayList<>(responses.length());
         for (int i = 0; i < responses.length(); i++) {
             Object resp = responses.get(i);
             if (resp instanceof ClusterStatsNodeResponse) {
@@ -115,10 +115,10 @@ public class TransportClusterStatsAction extends TransportNodesOperationAction<C
     }
 
     @Override
-    protected ClusterStatsNodeResponse nodeOperation(ClusterStatsNodeRequest nodeRequest) throws ElasticSearchException {
+    protected ClusterStatsNodeResponse nodeOperation(ClusterStatsNodeRequest nodeRequest) throws ElasticsearchException {
         NodeInfo nodeInfo = nodeService.info(false, true, false, true, false, false, true, false, true);
-        NodeStats nodeStats = nodeService.stats(CommonStatsFlags.NONE, false, true, true, false, false, true, false, false);
-        List<ShardStats> shardsStats = new ArrayList<ShardStats>();
+        NodeStats nodeStats = nodeService.stats(CommonStatsFlags.NONE, false, true, true, false, false, true, false, false, false);
+        List<ShardStats> shardsStats = new ArrayList<>();
         for (String index : indicesService.indices()) {
             IndexService indexService = indicesService.indexService(index);
             if (indexService == null) {

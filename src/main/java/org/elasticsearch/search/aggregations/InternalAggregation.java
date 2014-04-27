@@ -1,13 +1,13 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,16 +16,18 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.search.aggregations;
 
-import org.elasticsearch.cache.recycler.CacheRecycler;
 import org.elasticsearch.common.bytes.BytesArray;
 import org.elasticsearch.common.bytes.BytesReference;
+import org.elasticsearch.common.io.stream.StreamInput;
+import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.io.stream.Streamable;
+import org.elasticsearch.common.util.BigArrays;
 import org.elasticsearch.common.xcontent.ToXContent;
 import org.elasticsearch.common.xcontent.XContentBuilderString;
 
+import java.io.IOException;
 import java.util.List;
 
 /**
@@ -72,24 +74,29 @@ public abstract class InternalAggregation implements Aggregation, ToXContent, St
         public BytesReference stream() {
             return stream;
         }
+
+        @Override
+        public String toString() {
+            return name;
+        }
     }
 
     protected static class ReduceContext {
 
         private final List<InternalAggregation> aggregations;
-        private final CacheRecycler cacheRecycler;
+        private final BigArrays bigArrays;
 
-        public ReduceContext(List<InternalAggregation> aggregations, CacheRecycler cacheRecycler) {
+        public ReduceContext(List<InternalAggregation> aggregations, BigArrays bigArrays) {
             this.aggregations = aggregations;
-            this.cacheRecycler = cacheRecycler;
+            this.bigArrays = bigArrays;
         }
 
         public List<InternalAggregation> aggregations() {
             return aggregations;
         }
 
-        public CacheRecycler cacheRecycler() {
-            return cacheRecycler;
+        public BigArrays bigArrays() {
+            return bigArrays;
         }
     }
 
@@ -126,6 +133,23 @@ public abstract class InternalAggregation implements Aggregation, ToXContent, St
      */
     public abstract InternalAggregation reduce(ReduceContext reduceContext);
 
+    /**
+     * Read a size under the assumption that a value of 0 means unlimited.
+     */
+    protected static int readSize(StreamInput in) throws IOException {
+        final int size = in.readVInt();
+        return size == 0 ? Integer.MAX_VALUE : size;
+    }
+
+    /**
+     * Write a size under the assumption that a value of 0 means unlimited.
+     */
+    protected static void writeSize(int size, StreamOutput out) throws IOException {
+        if (size == Integer.MAX_VALUE) {
+            size = 0;
+        }
+        out.writeVInt(size);
+    }
 
     /**
      * Common xcontent fields that are shared among addAggregation

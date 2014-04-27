@@ -1,12 +1,11 @@
-package org.elasticsearch.action.admin.cluster.stats;
 /*
- * Licensed to ElasticSearch under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -18,10 +17,10 @@ package org.elasticsearch.action.admin.cluster.stats;
  * under the License.
  */
 
+package org.elasticsearch.action.admin.cluster.stats;
 
 import com.carrotsearch.hppc.ObjectObjectOpenHashMap;
 import com.carrotsearch.hppc.cursors.ObjectObjectCursor;
-import org.elasticsearch.Version;
 import org.elasticsearch.action.admin.indices.stats.CommonStats;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
@@ -51,13 +50,13 @@ public class ClusterStatsIndices implements ToXContent, Streamable {
     private IdCacheStats idCache;
     private CompletionStats completion;
     private SegmentsStats segments;
-    private PercolateStats peroclate;
+    private PercolateStats percolate;
 
     private ClusterStatsIndices() {
     }
 
     public ClusterStatsIndices(ClusterStatsNodeResponse[] nodeResponses) {
-        ObjectObjectOpenHashMap<String, ShardStats> countsPerIndex = new ObjectObjectOpenHashMap<String, ShardStats>();
+        ObjectObjectOpenHashMap<String, ShardStats> countsPerIndex = new ObjectObjectOpenHashMap<>();
 
         this.docs = new DocsStats();
         this.store = new StoreStats();
@@ -66,7 +65,7 @@ public class ClusterStatsIndices implements ToXContent, Streamable {
         this.idCache = new IdCacheStats();
         this.completion = new CompletionStats();
         this.segments = new SegmentsStats();
-        this.peroclate = new PercolateStats();
+        this.percolate = new PercolateStats();
 
         for (ClusterStatsNodeResponse r : nodeResponses) {
             for (org.elasticsearch.action.admin.indices.stats.ShardStats shardStats : r.shardsStats()) {
@@ -90,7 +89,7 @@ public class ClusterStatsIndices implements ToXContent, Streamable {
                 idCache.add(shardCommonStats.idCache);
                 completion.add(shardCommonStats.completion);
                 segments.add(shardCommonStats.segments);
-                peroclate.add(shardCommonStats.percolate);
+                percolate.add(shardCommonStats.percolate);
             }
         }
 
@@ -138,7 +137,7 @@ public class ClusterStatsIndices implements ToXContent, Streamable {
     }
 
     public PercolateStats getPercolate() {
-        return peroclate;
+        return percolate;
     }
 
     @Override
@@ -152,11 +151,7 @@ public class ClusterStatsIndices implements ToXContent, Streamable {
         idCache = IdCacheStats.readIdCacheStats(in);
         completion = CompletionStats.readCompletionStats(in);
         segments = SegmentsStats.readSegmentsStats(in);
-        if (in.getVersion().after(Version.V_1_0_0_RC1)) {
-            peroclate = PercolateStats.readPercolateStats(in);
-        } else {
-            peroclate = new PercolateStats();
-        }
+        percolate = PercolateStats.readPercolateStats(in);
     }
 
     @Override
@@ -170,9 +165,7 @@ public class ClusterStatsIndices implements ToXContent, Streamable {
         idCache.writeTo(out);
         completion.writeTo(out);
         segments.writeTo(out);
-        if (out.getVersion().onOrAfter(Version.V_1_0_0_RC1)) {
-            peroclate.writeTo(out);
-        }
+        percolate.writeTo(out);
     }
 
     public static ClusterStatsIndices readIndicesStats(StreamInput in) throws IOException {
@@ -196,7 +189,7 @@ public class ClusterStatsIndices implements ToXContent, Streamable {
         idCache.toXContent(builder, params);
         completion.toXContent(builder, params);
         segments.toXContent(builder, params);
-        peroclate.toXContent(builder, params);
+        percolate.toXContent(builder, params);
         return builder;
     }
 
@@ -249,17 +242,23 @@ public class ClusterStatsIndices implements ToXContent, Streamable {
             return (((double) (total - primaries)) / primaries);
         }
 
-        /** the maximum number of shards (primary+replicas) an index has */
+        /**
+         * the maximum number of shards (primary+replicas) an index has
+         */
         public int getMaxIndexShards() {
             return this.maxIndexShards;
         }
 
-        /** the minimum number of shards (primary+replicas) an index has */
+        /**
+         * the minimum number of shards (primary+replicas) an index has
+         */
         public int getMinIndexShards() {
             return this.minIndexShards;
         }
 
-        /** average number of shards (primary+replicas) across the indices */
+        /**
+         * average number of shards (primary+replicas) across the indices
+         */
         public double getAvgIndexShards() {
             if (this.indices == 0) {
                 return -1;
@@ -274,12 +273,16 @@ public class ClusterStatsIndices implements ToXContent, Streamable {
             return this.maxIndexPrimaryShards;
         }
 
-        /** the minimum number of primary shards an index has */
+        /**
+         * the minimum number of primary shards an index has
+         */
         public int getMinIndexPrimaryShards() {
             return this.minIndexPrimaryShards;
         }
 
-        /** the average number primary shards across the indices */
+        /**
+         * the average number primary shards across the indices
+         */
         public double getAvgIndexPrimaryShards() {
             if (this.indices == 0) {
                 return -1;

@@ -1,13 +1,13 @@
 /*
- * Licensed to Elastic Search and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. Elastic Search licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,10 +16,9 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.action.percolate;
 
-import org.elasticsearch.ElasticSearchGenerationException;
+import org.elasticsearch.ElasticsearchGenerationException;
 import org.elasticsearch.action.ActionRequestValidationException;
 import org.elasticsearch.action.get.GetRequest;
 import org.elasticsearch.action.support.broadcast.BroadcastOperationRequest;
@@ -41,8 +40,6 @@ import static org.elasticsearch.action.ValidateActions.addValidationError;
  *
  */
 public class PercolateRequest extends BroadcastOperationRequest<PercolateRequest> {
-
-    public static final XContentType contentType = Requests.CONTENT_TYPE;
 
     private String documentType;
     private String routing;
@@ -123,17 +120,17 @@ public class PercolateRequest extends BroadcastOperationRequest<PercolateRequest
         return source;
     }
 
-    public PercolateRequest source(Map document) throws ElasticSearchGenerationException {
-        return source(document, contentType);
+    public PercolateRequest source(Map document) throws ElasticsearchGenerationException {
+        return source(document, Requests.CONTENT_TYPE);
     }
 
-    public PercolateRequest source(Map document, XContentType contentType) throws ElasticSearchGenerationException {
+    public PercolateRequest source(Map document, XContentType contentType) throws ElasticsearchGenerationException {
         try {
             XContentBuilder builder = XContentFactory.contentBuilder(contentType);
             builder.map(document);
             return source(builder);
         } catch (IOException e) {
-            throw new ElasticSearchGenerationException("Failed to generate [" + document + "]", e);
+            throw new ElasticsearchGenerationException("Failed to generate [" + document + "]", e);
         }
     }
 
@@ -168,7 +165,7 @@ public class PercolateRequest extends BroadcastOperationRequest<PercolateRequest
     }
 
     public PercolateRequest source(PercolateSourceBuilder sourceBuilder) {
-        this.source = sourceBuilder.buildAsBytes(contentType);
+        this.source = sourceBuilder.buildAsBytes(Requests.CONTENT_TYPE);
         this.unsafe = false;
         return this;
     }
@@ -188,9 +185,6 @@ public class PercolateRequest extends BroadcastOperationRequest<PercolateRequest
     @Override
     public ActionRequestValidationException validate() {
         ActionRequestValidationException validationException = super.validate();
-        if (indices == null || indices.length == 0) {
-            validationException = addValidationError("index is missing", validationException);
-        }
         if (documentType == null) {
             validationException = addValidationError("type is missing", validationException);
         }

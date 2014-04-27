@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -29,6 +29,7 @@ import org.apache.lucene.search.spans.*;
 import org.apache.lucene.spatial.prefix.IntersectsPrefixTreeFilter;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.NumericUtils;
+import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.cache.recycler.CacheRecyclerModule;
 import org.elasticsearch.cluster.ClusterService;
 import org.elasticsearch.common.bytes.BytesArray;
@@ -43,6 +44,8 @@ import org.elasticsearch.common.lucene.search.function.FunctionScoreQuery;
 import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.settings.SettingsModule;
+import org.elasticsearch.common.unit.DistanceUnit;
+import org.elasticsearch.common.unit.Fuzziness;
 import org.elasticsearch.index.Index;
 import org.elasticsearch.index.IndexNameModule;
 import org.elasticsearch.index.analysis.AnalysisModule;
@@ -50,8 +53,11 @@ import org.elasticsearch.index.cache.IndexCacheModule;
 import org.elasticsearch.index.cache.filter.support.CacheKeyFilter;
 import org.elasticsearch.index.codec.CodecModule;
 import org.elasticsearch.index.engine.IndexEngineModule;
+import org.elasticsearch.index.fielddata.IndexFieldDataModule;
+import org.elasticsearch.index.fielddata.IndexFieldDataService;
 import org.elasticsearch.index.mapper.MapperService;
 import org.elasticsearch.index.mapper.MapperServiceModule;
+import org.elasticsearch.index.mapper.core.NumberFieldMapper;
 import org.elasticsearch.index.query.functionscore.FunctionScoreModule;
 import org.elasticsearch.index.search.NumericRangeFieldDataFilter;
 import org.elasticsearch.index.search.geo.GeoDistanceFilter;
@@ -59,9 +65,12 @@ import org.elasticsearch.index.search.geo.GeoPolygonFilter;
 import org.elasticsearch.index.search.geo.InMemoryGeoBoundingBoxFilter;
 import org.elasticsearch.index.settings.IndexSettingsModule;
 import org.elasticsearch.index.similarity.SimilarityModule;
+import org.elasticsearch.indices.fielddata.breaker.CircuitBreakerService;
+import org.elasticsearch.indices.fielddata.breaker.DummyCircuitBreakerService;
 import org.elasticsearch.indices.query.IndicesQueriesModule;
 import org.elasticsearch.script.ScriptModule;
 import org.elasticsearch.test.ElasticsearchTestCase;
+import org.elasticsearch.test.index.service.StubIndexService;
 import org.elasticsearch.threadpool.ThreadPool;
 import org.elasticsearch.threadpool.ThreadPoolModule;
 import org.hamcrest.Matchers;
@@ -112,16 +121,19 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
                 new IndexEngineModule(settings),
                 new SimilarityModule(settings),
                 new IndexQueryParserModule(settings),
+                new IndexFieldDataModule(settings),
                 new IndexNameModule(index),
                 new FunctionScoreModule(),
                 new AbstractModule() {
                     @Override
                     protected void configure() {
                         bind(ClusterService.class).toProvider(Providers.of((ClusterService) null));
+                        bind(CircuitBreakerService.class).to(DummyCircuitBreakerService.class);
                     }
                 }
         ).createInjector();
 
+        injector.getInstance(IndexFieldDataService.class).setIndexService((new StubIndexService(injector.getInstance(MapperService.class))));
         String mapping = copyToStringFromClasspath("/org/elasticsearch/index/query/mapping.json");
         injector.getInstance(MapperService.class).merge("person", new CompressedString(mapping), true);
         injector.getInstance(MapperService.class).documentMapper("person").parse(new BytesArray(copyToBytesFromClasspath("/org/elasticsearch/index/query/data.json")));
@@ -429,7 +441,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
     @Test
     public void testFuzzyQueryWithFieldsBuilder() throws IOException {
         IndexQueryParserService queryParser = queryParser();
-        Query parsedQuery = queryParser.parse(fuzzyQuery("name.first", "sh").minSimilarity(0.1f).prefixLength(1).boost(2.0f).buildAsBytes()).query();
+        Query parsedQuery = queryParser.parse(fuzzyQuery("name.first", "sh").fuzziness(Fuzziness.fromSimilarity(0.1f)).prefixLength(1).boost(2.0f).buildAsBytes()).query();
         assertThat(parsedQuery, instanceOf(FuzzyQuery.class));
         FuzzyQuery fuzzyQuery = (FuzzyQuery) parsedQuery;
         assertThat(fuzzyQuery.getTerm(), equalTo(new Term("name.first", "sh")));
@@ -1350,28 +1362,6 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         assertThat(((TermFilter) constantScoreQuery.getFilter()).getTerm(), equalTo(new Term("name.last", "banon")));
     }
 
-    // Disabled since we need a current context to execute it...
-//    @Test public void testCustomScoreQuery1() throws IOException {
-//        IndexQueryParser queryParser = queryParser();
-//        String query = copyToStringFromClasspath("/org/elasticsearch/index/query/custom_score1.json");
-//        Query parsedQuery = queryParser.parse(query).query();
-//        assertThat(parsedQuery, instanceOf(FunctionScoreQuery.class));
-//        FunctionScoreQuery functionScoreQuery = (FunctionScoreQuery) parsedQuery;
-//        assertThat(((TermQuery) functionScoreQuery.getSubQuery()).getTerm(), equalTo(new Term("name.last", "banon")));
-//        assertThat(functionScoreQuery.getFunction(), instanceOf(CustomScoreQueryParser.ScriptScoreFunction.class));
-//    }
-
-    @Test
-    public void testCustomBoostFactorQueryBuilder() throws IOException {
-        IndexQueryParserService queryParser = queryParser();
-        Query parsedQuery = queryParser.parse(customBoostFactorQuery(termQuery("name.last", "banon")).boostFactor(1.3f)).query();
-        assertThat(parsedQuery, instanceOf(FunctionScoreQuery.class));
-        FunctionScoreQuery functionScoreQuery = (FunctionScoreQuery) parsedQuery;
-        assertThat(((TermQuery) functionScoreQuery.getSubQuery()).getTerm(), equalTo(new Term("name.last", "banon")));
-        assertThat((double) ((BoostScoreFunction) functionScoreQuery.getFunction()).getBoost(), closeTo(1.3, 0.001));
-    }
-
-
     @Test
     public void testCustomBoostFactorQueryBuilder_withFunctionScore() throws IOException {
         IndexQueryParserService queryParser = queryParser();
@@ -1390,18 +1380,6 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         FunctionScoreQuery functionScoreQuery = (FunctionScoreQuery) parsedQuery;
         assertThat(functionScoreQuery.getSubQuery() instanceof XConstantScoreQuery, equalTo(true));
         assertThat(((XConstantScoreQuery) functionScoreQuery.getSubQuery()).getFilter() instanceof MatchAllDocsFilter, equalTo(true));
-        assertThat((double) ((BoostScoreFunction) functionScoreQuery.getFunction()).getBoost(), closeTo(1.3, 0.001));
-    }
-
-
-    @Test
-    public void testCustomBoostFactorQuery() throws IOException {
-        IndexQueryParserService queryParser = queryParser();
-        String query = copyToStringFromClasspath("/org/elasticsearch/index/query/custom-boost-factor-query.json");
-        Query parsedQuery = queryParser.parse(query).query();
-        assertThat(parsedQuery, instanceOf(FunctionScoreQuery.class));
-        FunctionScoreQuery functionScoreQuery = (FunctionScoreQuery) parsedQuery;
-        assertThat(((TermQuery) functionScoreQuery.getSubQuery()).getTerm(), equalTo(new Term("name.last", "banon")));
         assertThat((double) ((BoostScoreFunction) functionScoreQuery.getFunction()).getBoost(), closeTo(1.3, 0.001));
     }
 
@@ -1592,7 +1570,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         String query = copyToStringFromClasspath("/org/elasticsearch/index/query/span-multi-term-fuzzy-range.json");
         Query parsedQuery = queryParser.parse(query).query();
         assertThat(parsedQuery, instanceOf(SpanMultiTermQueryWrapper.class));
-        NumericRangeQuery<Long> expectedWrapped = NumericRangeQuery.newLongRange("age", 7l, 17l, true, true);
+        NumericRangeQuery<Long> expectedWrapped = NumericRangeQuery.newLongRange("age", NumberFieldMapper.Defaults.PRECISION_STEP_64_BIT, 7l, 17l, true, true);
         expectedWrapped.setBoost(2.0f);
         SpanMultiTermQueryWrapper<MultiTermQuery> wrapper = (SpanMultiTermQueryWrapper<MultiTermQuery>) parsedQuery;
         assertThat(wrapper, equalTo(new SpanMultiTermQueryWrapper<MultiTermQuery>(expectedWrapped)));
@@ -1604,7 +1582,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         String query = copyToStringFromClasspath("/org/elasticsearch/index/query/span-multi-term-range-numeric.json");
         Query parsedQuery = queryParser.parse(query).query();
         assertThat(parsedQuery, instanceOf(SpanMultiTermQueryWrapper.class));
-        NumericRangeQuery<Long> expectedWrapped = NumericRangeQuery.newLongRange("age", 10l, 20l, true, false);
+        NumericRangeQuery<Long> expectedWrapped = NumericRangeQuery.newLongRange("age", NumberFieldMapper.Defaults.PRECISION_STEP_64_BIT, 10l, 20l, true, false);
         expectedWrapped.setBoost(2.0f);
         SpanMultiTermQueryWrapper<MultiTermQuery> wrapper = (SpanMultiTermQueryWrapper<MultiTermQuery>) parsedQuery;
         assertThat(wrapper, equalTo(new SpanMultiTermQueryWrapper<MultiTermQuery>(expectedWrapped)));
@@ -1613,10 +1591,10 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
     @Test
     public void testSpanMultiTermTermRangeQuery() throws IOException {
         IndexQueryParserService queryParser = queryParser();
-        String query = copyToStringFromClasspath("/org/elasticsearch/index/query/span-multi-term-range-numeric.json");
+        String query = copyToStringFromClasspath("/org/elasticsearch/index/query/span-multi-term-range-term.json");
         Query parsedQuery = queryParser.parse(query).query();
         assertThat(parsedQuery, instanceOf(SpanMultiTermQueryWrapper.class));
-        NumericRangeQuery<Long> expectedWrapped = NumericRangeQuery.newLongRange("age", 10l, 20l, true, false);
+        TermRangeQuery expectedWrapped = TermRangeQuery.newStringRange("user", "alice", "bob", true, false);
         expectedWrapped.setBoost(2.0f);
         SpanMultiTermQueryWrapper<MultiTermQuery> wrapper = (SpanMultiTermQueryWrapper<MultiTermQuery>) parsedQuery;
         assertThat(wrapper, equalTo(new SpanMultiTermQueryWrapper<MultiTermQuery>(expectedWrapped)));
@@ -1698,7 +1676,41 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         IndexQueryParserService queryParser = queryParser();
         Query parsedQuery = queryParser.parse(fuzzyLikeThisQuery("name.first", "name.last").likeText("something").maxQueryTerms(12)).query();
         assertThat(parsedQuery, instanceOf(FuzzyLikeThisQuery.class));
-//        FuzzyLikeThisQuery fuzzyLikeThisQuery = (FuzzyLikeThisQuery) parsedQuery;
+        parsedQuery = queryParser.parse(fuzzyLikeThisQuery("name.first", "name.last").likeText("something").maxQueryTerms(12).fuzziness(Fuzziness.build("4"))).query();
+        assertThat(parsedQuery, instanceOf(FuzzyLikeThisQuery.class));
+
+        Query parsedQuery1 = queryParser.parse(fuzzyLikeThisQuery("name.first", "name.last").likeText("something").maxQueryTerms(12).fuzziness(Fuzziness.build("4.0"))).query();
+        assertThat(parsedQuery1, instanceOf(FuzzyLikeThisQuery.class));
+        assertThat(parsedQuery, equalTo(parsedQuery1));
+
+        try {
+            queryParser.parse(fuzzyLikeThisQuery("name.first", "name.last").likeText("something").maxQueryTerms(12).fuzziness(Fuzziness.build("4.1"))).query();
+            fail("exception expected - fractional edit distance");
+        } catch (ElasticsearchException ex) {
+           //
+        }
+
+        try {
+            queryParser.parse(fuzzyLikeThisQuery("name.first", "name.last").likeText("something").maxQueryTerms(12).fuzziness(Fuzziness.build("-" + between(1, 100)))).query();
+            fail("exception expected - negative edit distance");
+        } catch (ElasticsearchException ex) {
+            //
+        }
+        String[] queries = new String[] {
+                "{\"flt\": {\"fields\": [\"comment\"], \"like_text\": \"FFFdfds\",\"fuzziness\": \"4\"}}",
+                "{\"flt\": {\"fields\": [\"comment\"], \"like_text\": \"FFFdfds\",\"fuzziness\": \"4.00000000\"}}",
+                "{\"flt\": {\"fields\": [\"comment\"], \"like_text\": \"FFFdfds\",\"fuzziness\": \"4.\"}}",
+                "{\"flt\": {\"fields\": [\"comment\"], \"like_text\": \"FFFdfds\",\"fuzziness\": 4}}",
+                "{\"flt\": {\"fields\": [\"comment\"], \"like_text\": \"FFFdfds\",\"fuzziness\": 4.0}}"
+        };
+        int iters = scaledRandomIntBetween(5, 100);
+        for (int i = 0; i < iters; i++) {
+            parsedQuery = queryParser.parse(new BytesArray((String) randomFrom(queries))).query();
+            parsedQuery1 = queryParser.parse(new BytesArray((String) randomFrom(queries))).query();
+            assertThat(parsedQuery1, instanceOf(FuzzyLikeThisQuery.class));
+            assertThat(parsedQuery, instanceOf(FuzzyLikeThisQuery.class));
+            assertThat(parsedQuery, equalTo(parsedQuery1));
+        }
     }
 
     @Test
@@ -1764,7 +1776,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         assertThat(filter.fieldName(), equalTo("location"));
         assertThat(filter.lat(), closeTo(40, 0.00001));
         assertThat(filter.lon(), closeTo(-70, 0.00001));
-        assertThat(filter.distance(), closeTo(12, 0.00001));
+        assertThat(filter.distance(), closeTo(DistanceUnit.DEFAULT.convert(12, DistanceUnit.MILES), 0.00001));
     }
 
     @Test
@@ -1778,7 +1790,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         assertThat(filter.fieldName(), equalTo("location"));
         assertThat(filter.lat(), closeTo(40, 0.00001));
         assertThat(filter.lon(), closeTo(-70, 0.00001));
-        assertThat(filter.distance(), closeTo(12, 0.00001));
+        assertThat(filter.distance(), closeTo(DistanceUnit.DEFAULT.convert(12, DistanceUnit.MILES), 0.00001));
     }
 
     @Test
@@ -1792,7 +1804,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         assertThat(filter.fieldName(), equalTo("location"));
         assertThat(filter.lat(), closeTo(40, 0.00001));
         assertThat(filter.lon(), closeTo(-70, 0.00001));
-        assertThat(filter.distance(), closeTo(12, 0.00001));
+        assertThat(filter.distance(), closeTo(DistanceUnit.DEFAULT.convert(12, DistanceUnit.MILES), 0.00001));
     }
 
     @Test
@@ -1806,7 +1818,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         assertThat(filter.fieldName(), equalTo("location"));
         assertThat(filter.lat(), closeTo(40, 0.00001));
         assertThat(filter.lon(), closeTo(-70, 0.00001));
-        assertThat(filter.distance(), closeTo(12, 0.00001));
+        assertThat(filter.distance(), closeTo(DistanceUnit.DEFAULT.convert(12, DistanceUnit.MILES), 0.00001));
     }
 
     @Test
@@ -1820,7 +1832,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         assertThat(filter.fieldName(), equalTo("location"));
         assertThat(filter.lat(), closeTo(40, 0.00001));
         assertThat(filter.lon(), closeTo(-70, 0.00001));
-        assertThat(filter.distance(), closeTo(12, 0.00001));
+        assertThat(filter.distance(), closeTo(DistanceUnit.DEFAULT.convert(12, DistanceUnit.MILES), 0.00001));
     }
 
     @Test
@@ -1834,7 +1846,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         assertThat(filter.fieldName(), equalTo("location"));
         assertThat(filter.lat(), closeTo(40, 0.00001));
         assertThat(filter.lon(), closeTo(-70, 0.00001));
-        assertThat(filter.distance(), closeTo(12, 0.00001));
+        assertThat(filter.distance(), closeTo(DistanceUnit.DEFAULT.convert(12, DistanceUnit.MILES), 0.00001));
     }
 
     @Test
@@ -1848,7 +1860,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         assertThat(filter.fieldName(), equalTo("location"));
         assertThat(filter.lat(), closeTo(40, 0.00001));
         assertThat(filter.lon(), closeTo(-70, 0.00001));
-        assertThat(filter.distance(), closeTo(12, 0.00001));
+        assertThat(filter.distance(), closeTo(DistanceUnit.DEFAULT.convert(12, DistanceUnit.MILES), 0.00001));
     }
 
     @Test
@@ -1862,7 +1874,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         assertThat(filter.fieldName(), equalTo("location"));
         assertThat(filter.lat(), closeTo(40, 0.00001));
         assertThat(filter.lon(), closeTo(-70, 0.00001));
-        assertThat(filter.distance(), closeTo(12, 0.00001));
+        assertThat(filter.distance(), closeTo(DistanceUnit.DEFAULT.convert(0.012, DistanceUnit.MILES), 0.00001));
     }
 
     @Test
@@ -1876,7 +1888,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         assertThat(filter.fieldName(), equalTo("location"));
         assertThat(filter.lat(), closeTo(40, 0.00001));
         assertThat(filter.lon(), closeTo(-70, 0.00001));
-        assertThat(filter.distance(), closeTo(12, 0.00001));
+        assertThat(filter.distance(), closeTo(DistanceUnit.KILOMETERS.convert(12, DistanceUnit.MILES), 0.00001));
     }
 
     @Test
@@ -1890,7 +1902,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         assertThat(filter.fieldName(), equalTo("location"));
         assertThat(filter.lat(), closeTo(40, 0.00001));
         assertThat(filter.lon(), closeTo(-70, 0.00001));
-        assertThat(filter.distance(), closeTo(12, 0.00001));
+        assertThat(filter.distance(), closeTo(DistanceUnit.DEFAULT.convert(12, DistanceUnit.MILES), 0.00001));
     }
 
     @Test
@@ -1904,7 +1916,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         assertThat(filter.fieldName(), equalTo("location"));
         assertThat(filter.lat(), closeTo(40, 0.00001));
         assertThat(filter.lon(), closeTo(-70, 0.00001));
-        assertThat(filter.distance(), closeTo(12, 0.00001));
+        assertThat(filter.distance(), closeTo(DistanceUnit.DEFAULT.convert(12, DistanceUnit.MILES), 0.00001));
     }
 
     @Test
@@ -1918,7 +1930,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         assertThat(filter.fieldName(), equalTo("location"));
         assertThat(filter.lat(), closeTo(40, 0.00001));
         assertThat(filter.lon(), closeTo(-70, 0.00001));
-        assertThat(filter.distance(), closeTo(12, 0.00001));
+        assertThat(filter.distance(), closeTo(DistanceUnit.DEFAULT.convert(12, DistanceUnit.MILES), 0.00001));
     }
 
     @Test
@@ -1932,7 +1944,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         assertThat(filter.fieldName(), equalTo("location"));
         assertThat(filter.lat(), closeTo(40, 0.00001));
         assertThat(filter.lon(), closeTo(-70, 0.00001));
-        assertThat(filter.distance(), closeTo(12, 0.00001));
+        assertThat(filter.distance(), closeTo(DistanceUnit.DEFAULT.convert(12, DistanceUnit.MILES), 0.00001));
     }
 
     @Test
@@ -2013,6 +2025,37 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
     }
 
     @Test
+    public void testGeoBoundingBoxFilter5() throws IOException {
+        IndexQueryParserService queryParser = queryParser();
+        String query = copyToStringFromClasspath("/org/elasticsearch/index/query/geo_boundingbox5.json");
+        Query parsedQuery = queryParser.parse(query).query();
+        assertThat(parsedQuery, instanceOf(XConstantScoreQuery.class));
+        XConstantScoreQuery constantScoreQuery = (XConstantScoreQuery) parsedQuery;
+        InMemoryGeoBoundingBoxFilter filter = (InMemoryGeoBoundingBoxFilter) constantScoreQuery.getFilter();
+        assertThat(filter.fieldName(), equalTo("location"));
+        assertThat(filter.topLeft().lat(), closeTo(40, 0.00001));
+        assertThat(filter.topLeft().lon(), closeTo(-70, 0.00001));
+        assertThat(filter.bottomRight().lat(), closeTo(30, 0.00001));
+        assertThat(filter.bottomRight().lon(), closeTo(-80, 0.00001));
+    }
+
+    @Test
+    public void testGeoBoundingBoxFilter6() throws IOException {
+        IndexQueryParserService queryParser = queryParser();
+        String query = copyToStringFromClasspath("/org/elasticsearch/index/query/geo_boundingbox6.json");
+        Query parsedQuery = queryParser.parse(query).query();
+        assertThat(parsedQuery, instanceOf(XConstantScoreQuery.class));
+        XConstantScoreQuery constantScoreQuery = (XConstantScoreQuery) parsedQuery;
+        InMemoryGeoBoundingBoxFilter filter = (InMemoryGeoBoundingBoxFilter) constantScoreQuery.getFilter();
+        assertThat(filter.fieldName(), equalTo("location"));
+        assertThat(filter.topLeft().lat(), closeTo(40, 0.00001));
+        assertThat(filter.topLeft().lon(), closeTo(-70, 0.00001));
+        assertThat(filter.bottomRight().lat(), closeTo(30, 0.00001));
+        assertThat(filter.bottomRight().lon(), closeTo(-80, 0.00001));
+    }
+
+
+    @Test
     public void testGeoPolygonNamedFilter() throws IOException {
         IndexQueryParserService queryParser = queryParser();
         String query = copyToStringFromClasspath("/org/elasticsearch/index/query/geo_polygon-named.json");
@@ -2022,7 +2065,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         XConstantScoreQuery constantScoreQuery = (XConstantScoreQuery) parsedQuery.query();
         GeoPolygonFilter filter = (GeoPolygonFilter) constantScoreQuery.getFilter();
         assertThat(filter.fieldName(), equalTo("location"));
-        assertThat(filter.points().length, equalTo(3));
+        assertThat(filter.points().length, equalTo(4));
         assertThat(filter.points()[0].lat(), closeTo(40, 0.00001));
         assertThat(filter.points()[0].lon(), closeTo(-70, 0.00001));
         assertThat(filter.points()[1].lat(), closeTo(30, 0.00001));
@@ -2030,6 +2073,29 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         assertThat(filter.points()[2].lat(), closeTo(20, 0.00001));
         assertThat(filter.points()[2].lon(), closeTo(-90, 0.00001));
     }
+
+
+    @Test
+    public void testGeoPolygonFilterParsingExceptions() throws IOException {
+        String[] brokenFiles = new String[]{
+                "/org/elasticsearch/index/query/geo_polygon_exception_1.json",
+                "/org/elasticsearch/index/query/geo_polygon_exception_2.json",
+                "/org/elasticsearch/index/query/geo_polygon_exception_3.json",
+                "/org/elasticsearch/index/query/geo_polygon_exception_4.json",
+                "/org/elasticsearch/index/query/geo_polygon_exception_5.json"
+        };
+        for (String brokenFile : brokenFiles) {
+            IndexQueryParserService queryParser = queryParser();
+            String query = copyToStringFromClasspath(brokenFile);
+            try {
+                queryParser.parse(query).query();
+                fail("parsing a broken geo_polygon filter didn't fail as expected while parsing: " + brokenFile);
+            } catch (QueryParsingException e) {
+                // success!
+            }
+        }
+    }
+
 
     @Test
     public void testGeoPolygonFilter1() throws IOException {
@@ -2040,7 +2106,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         XConstantScoreQuery constantScoreQuery = (XConstantScoreQuery) parsedQuery;
         GeoPolygonFilter filter = (GeoPolygonFilter) constantScoreQuery.getFilter();
         assertThat(filter.fieldName(), equalTo("location"));
-        assertThat(filter.points().length, equalTo(3));
+        assertThat(filter.points().length, equalTo(4));
         assertThat(filter.points()[0].lat(), closeTo(40, 0.00001));
         assertThat(filter.points()[0].lon(), closeTo(-70, 0.00001));
         assertThat(filter.points()[1].lat(), closeTo(30, 0.00001));
@@ -2058,7 +2124,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         XConstantScoreQuery constantScoreQuery = (XConstantScoreQuery) parsedQuery;
         GeoPolygonFilter filter = (GeoPolygonFilter) constantScoreQuery.getFilter();
         assertThat(filter.fieldName(), equalTo("location"));
-        assertThat(filter.points().length, equalTo(3));
+        assertThat(filter.points().length, equalTo(4));
         assertThat(filter.points()[0].lat(), closeTo(40, 0.00001));
         assertThat(filter.points()[0].lon(), closeTo(-70, 0.00001));
         assertThat(filter.points()[1].lat(), closeTo(30, 0.00001));
@@ -2076,7 +2142,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         XConstantScoreQuery constantScoreQuery = (XConstantScoreQuery) parsedQuery;
         GeoPolygonFilter filter = (GeoPolygonFilter) constantScoreQuery.getFilter();
         assertThat(filter.fieldName(), equalTo("location"));
-        assertThat(filter.points().length, equalTo(3));
+        assertThat(filter.points().length, equalTo(4));
         assertThat(filter.points()[0].lat(), closeTo(40, 0.00001));
         assertThat(filter.points()[0].lon(), closeTo(-70, 0.00001));
         assertThat(filter.points()[1].lat(), closeTo(30, 0.00001));
@@ -2094,7 +2160,7 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
         XConstantScoreQuery constantScoreQuery = (XConstantScoreQuery) parsedQuery;
         GeoPolygonFilter filter = (GeoPolygonFilter) constantScoreQuery.getFilter();
         assertThat(filter.fieldName(), equalTo("location"));
-        assertThat(filter.points().length, equalTo(3));
+        assertThat(filter.points().length, equalTo(4));
         assertThat(filter.points()[0].lat(), closeTo(40, 0.00001));
         assertThat(filter.points()[0].lon(), closeTo(-70, 0.00001));
         assertThat(filter.points()[1].lat(), closeTo(30, 0.00001));
@@ -2176,11 +2242,37 @@ public class SimpleIndexQueryParserTests extends ElasticsearchTestCase {
     }
 
     @Test
+    public void testBadTypeMatchQuery() throws Exception {
+        IndexQueryParserService queryParser = queryParser();
+        String query = copyToStringFromClasspath("/org/elasticsearch/index/query/match-query-bad-type.json");
+        QueryParsingException expectedException = null;
+        try {
+            queryParser.parse(query).query();
+        } catch (QueryParsingException qpe) {
+            expectedException = qpe;
+        }
+        assertThat(expectedException, notNullValue());
+    }
+
+    @Test
     public void testMultiMatchQuery() throws Exception {
         IndexQueryParserService queryParser = queryParser();
         String query = copyToStringFromClasspath("/org/elasticsearch/index/query/multiMatch-query-simple.json");
         Query parsedQuery = queryParser.parse(query).query();
         assertThat(parsedQuery, instanceOf(DisjunctionMaxQuery.class));
+    }
+
+    @Test
+    public void testBadTypeMultiMatchQuery() throws Exception {
+        IndexQueryParserService queryParser = queryParser();
+        String query = copyToStringFromClasspath("/org/elasticsearch/index/query/multiMatch-query-bad-type.json");
+        QueryParsingException expectedException = null;
+        try {
+            queryParser.parse(query).query();
+        } catch (QueryParsingException qpe) {
+            expectedException = qpe;
+        }
+        assertThat(expectedException, notNullValue());
     }
 
     @Test

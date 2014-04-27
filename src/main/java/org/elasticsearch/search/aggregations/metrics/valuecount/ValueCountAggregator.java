@@ -1,13 +1,13 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,19 +16,19 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.search.aggregations.metrics.valuecount;
 
-import org.elasticsearch.common.util.BigArrays;
+import org.apache.lucene.index.AtomicReaderContext;
+import org.elasticsearch.common.lease.Releasables;
 import org.elasticsearch.common.util.LongArray;
 import org.elasticsearch.index.fielddata.BytesValues;
 import org.elasticsearch.search.aggregations.Aggregator;
 import org.elasticsearch.search.aggregations.InternalAggregation;
+import org.elasticsearch.search.aggregations.metrics.MetricsAggregator;
 import org.elasticsearch.search.aggregations.support.AggregationContext;
+import org.elasticsearch.search.aggregations.support.ValuesSource;
+import org.elasticsearch.search.aggregations.support.ValuesSourceAggregatorFactory;
 import org.elasticsearch.search.aggregations.support.ValuesSourceConfig;
-import org.elasticsearch.search.aggregations.support.bytes.BytesValuesSource;
-import org.elasticsearch.search.aggregations.AggregatorFactories;
-import org.elasticsearch.search.aggregations.support.ValueSourceAggregatorFactory;
 
 import java.io.IOException;
 
@@ -38,20 +38,21 @@ import java.io.IOException;
  * This aggregator works in a multi-bucket mode, that is, when serves as a sub-aggregator, a single aggregator instance aggregates the
  * counts for all buckets owned by the parent aggregator)
  */
-public class ValueCountAggregator extends Aggregator {
+public class ValueCountAggregator extends MetricsAggregator.SingleValue {
 
-    private final BytesValuesSource valuesSource;
+    private final ValuesSource valuesSource;
+    private BytesValues values;
 
     // a count per bucket
     LongArray counts;
 
-    public ValueCountAggregator(String name, long expectedBucketsCount, BytesValuesSource valuesSource, AggregationContext aggregationContext, Aggregator parent) {
-        super(name, BucketAggregationMode.MULTI_BUCKETS, AggregatorFactories.EMPTY, 0, aggregationContext, parent);
+    public ValueCountAggregator(String name, long expectedBucketsCount, ValuesSource valuesSource, AggregationContext aggregationContext, Aggregator parent) {
+        super(name, 0, aggregationContext, parent);
         this.valuesSource = valuesSource;
         if (valuesSource != null) {
             // expectedBucketsCount == 0 means it's a top level bucket
             final long initialSize = expectedBucketsCount < 2 ? 1 : expectedBucketsCount;
-            counts = BigArrays.newLongArray(initialSize);
+            counts = bigArrays.newLongArray(initialSize, true);
         }
     }
 
@@ -61,13 +62,19 @@ public class ValueCountAggregator extends Aggregator {
     }
 
     @Override
+    public void setNextReader(AtomicReaderContext reader) {
+        values = valuesSource.bytesValues();
+    }
+
+    @Override
     public void collect(int doc, long owningBucketOrdinal) throws IOException {
-        BytesValues values = valuesSource.bytesValues();
-        if (values == null) {
-            return;
-        }
-        counts = BigArrays.grow(counts, owningBucketOrdinal + 1);
+        counts = bigArrays.grow(counts, owningBucketOrdinal + 1);
         counts.increment(owningBucketOrdinal, values.setDocument(doc));
+    }
+
+    @Override
+    public double metric(long owningBucketOrd) {
+        return valuesSource == null ? 0 : counts.get(owningBucketOrd);
     }
 
     @Override
@@ -84,10 +91,15 @@ public class ValueCountAggregator extends Aggregator {
         return new InternalValueCount(name, 0l);
     }
 
-    public static class Factory extends ValueSourceAggregatorFactory.LeafOnly<BytesValuesSource> {
+    @Override
+    public void doClose() {
+        Releasables.close(counts);
+    }
 
-        public Factory(String name, ValuesSourceConfig<BytesValuesSource> valuesSourceBuilder) {
-            super(name, InternalValueCount.TYPE.name(), valuesSourceBuilder);
+    public static class Factory<VS extends ValuesSource> extends ValuesSourceAggregatorFactory.LeafOnly<VS> {
+
+        public Factory(String name, ValuesSourceConfig<VS> config) {
+            super(name, InternalValueCount.TYPE.name(), config);
         }
 
         @Override
@@ -96,7 +108,7 @@ public class ValueCountAggregator extends Aggregator {
         }
 
         @Override
-        protected Aggregator create(BytesValuesSource valuesSource, long expectedBucketsCount, AggregationContext aggregationContext, Aggregator parent) {
+        protected Aggregator create(ValuesSource valuesSource, long expectedBucketsCount, AggregationContext aggregationContext, Aggregator parent) {
             return new ValueCountAggregator(name, expectedBucketsCount, valuesSource, aggregationContext, parent);
         }
 

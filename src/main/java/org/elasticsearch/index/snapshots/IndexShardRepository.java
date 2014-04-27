@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -21,7 +21,7 @@ package org.elasticsearch.index.snapshots;
 
 import org.elasticsearch.cluster.metadata.SnapshotId;
 import org.elasticsearch.index.deletionpolicy.SnapshotIndexCommit;
-import org.elasticsearch.index.gateway.RecoveryStatus;
+import org.elasticsearch.indices.recovery.RecoveryState;
 import org.elasticsearch.index.shard.ShardId;
 
 /**
@@ -35,7 +35,7 @@ public interface IndexShardRepository {
     /**
      * Creates a snapshot of the shard based on the index commit point.
      * <p/>
-     * The index commit point can be obtained by using {@link org.elasticsearch.index.engine.robin.RobinEngine#snapshotIndex()} method.
+     * The index commit point can be obtained by using {@link org.elasticsearch.index.engine.internal.InternalEngine#snapshotIndex()} method.
      * IndexShardRepository implementations shouldn't release the snapshot index commit point. It is done by the method caller.
      * <p/>
      * As snapshot process progresses, implementation of this method should update {@link IndexShardSnapshotStatus} object and check
@@ -56,8 +56,17 @@ public interface IndexShardRepository {
      * @param snapshotId      snapshot id
      * @param shardId         shard id (in the current index)
      * @param snapshotShardId shard id (in the snapshot)
-     * @param recoveryStatus  recovery status
+     * @param recoveryState   recovery state
      */
-    void restore(SnapshotId snapshotId, ShardId shardId, ShardId snapshotShardId, RecoveryStatus recoveryStatus);
+    void restore(SnapshotId snapshotId, ShardId shardId, ShardId snapshotShardId, RecoveryState recoveryState);
+
+    /**
+     * Retrieve shard snapshot status for the stored snapshot
+     *
+     * @param snapshotId snapshot id
+     * @param shardId    shard id
+     * @return snapshot status
+     */
+    IndexShardSnapshotStatus snapshotStatus(SnapshotId snapshotId, ShardId shardId);
 
 }

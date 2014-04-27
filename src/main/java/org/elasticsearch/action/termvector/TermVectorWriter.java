@@ -1,11 +1,11 @@
 /*
- * Licensed to Elastic Search and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. Elastic Search licenses this 
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -32,8 +32,8 @@ import java.util.Set;
 
 // package only - this is an internal class!
 final class TermVectorWriter {
-    final List<String> fields = new ArrayList<String>();
-    final List<Long> fieldOffset = new ArrayList<Long>();
+    final List<String> fields = new ArrayList<>();
+    final List<Long> fieldOffset = new ArrayList<>();
     final BytesStreamOutput output = new BytesStreamOutput(1); // can we somehow
     // predict the
     // size here?

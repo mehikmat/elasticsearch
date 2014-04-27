@@ -1,11 +1,11 @@
 /*
- * Licensed to Elastic Search and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. Elastic Search licenses this 
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -24,7 +24,7 @@ import com.carrotsearch.hppc.cursors.IntObjectCursor;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
 import com.google.common.collect.UnmodifiableIterator;
-import org.elasticsearch.ElasticSearchIllegalStateException;
+import org.elasticsearch.ElasticsearchIllegalStateException;
 import org.elasticsearch.cluster.metadata.IndexMetaData;
 import org.elasticsearch.cluster.metadata.MetaData;
 import org.elasticsearch.common.collect.ImmutableOpenIntMap;
@@ -36,7 +36,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static com.google.common.collect.Lists.newArrayList;
 
@@ -58,6 +58,7 @@ import static com.google.common.collect.Lists.newArrayList;
 public class IndexRoutingTable implements Iterable<IndexShardRoutingTable> {
 
     private final String index;
+    private final ShardShuffler shuffler;
 
     // note, we assume that when the index routing is created, ShardRoutings are created for all possible number of
     // shards with state set to UNASSIGNED
@@ -66,10 +67,9 @@ public class IndexRoutingTable implements Iterable<IndexShardRoutingTable> {
     private final ImmutableList<ShardRouting> allShards;
     private final ImmutableList<ShardRouting> allActiveShards;
 
-    private final AtomicInteger counter = new AtomicInteger();
-
     IndexRoutingTable(String index, ImmutableOpenIntMap<IndexShardRoutingTable> shards) {
         this.index = index;
+        this.shuffler = new RotationShardShuffler(ThreadLocalRandom.current().nextInt());
         this.shards = shards;
         ImmutableList.Builder<ShardRouting> allShards = ImmutableList.builder();
         ImmutableList.Builder<ShardRouting> allActiveShards = ImmutableList.builder();
@@ -133,7 +133,7 @@ public class IndexRoutingTable implements Iterable<IndexShardRoutingTable> {
      * validate based on a meta data, returning failures found
      */
     public List<String> validate(IndexMetaData indexMetaData) {
-        ArrayList<String> failures = new ArrayList<String>();
+        ArrayList<String> failures = new ArrayList<>();
 
         // check the number of shards
         if (indexMetaData.numberOfShards() != shards().size()) {
@@ -273,14 +273,14 @@ public class IndexRoutingTable implements Iterable<IndexShardRoutingTable> {
      * Returns an unordered iterator over all shards (including replicas).
      */
     public ShardsIterator randomAllShardsIt() {
-        return new PlainShardsIterator(allShards, counter.incrementAndGet());
+        return new PlainShardsIterator(shuffler.shuffle(allShards));
     }
 
     /**
      * Returns an unordered iterator over all active shards (including replicas).
      */
     public ShardsIterator randomAllActiveShardsIt() {
-        return new PlainShardsIterator(allActiveShards, counter.incrementAndGet());
+        return new PlainShardsIterator(shuffler.shuffle(allActiveShards));
     }
 
     /**
@@ -289,7 +289,7 @@ public class IndexRoutingTable implements Iterable<IndexShardRoutingTable> {
      */
     public GroupShardsIterator groupByShardsIt() {
         // use list here since we need to maintain identity across shards
-        ArrayList<ShardIterator> set = new ArrayList<ShardIterator>(shards.size());
+        ArrayList<ShardIterator> set = new ArrayList<>(shards.size());
         for (IndexShardRoutingTable indexShard : this) {
             set.add(indexShard.shardsIt());
         }
@@ -305,7 +305,7 @@ public class IndexRoutingTable implements Iterable<IndexShardRoutingTable> {
      */
     public GroupShardsIterator groupByAllIt() {
         // use list here since we need to maintain identity across shards
-        ArrayList<ShardIterator> set = new ArrayList<ShardIterator>();
+        ArrayList<ShardIterator> set = new ArrayList<>();
         for (IndexShardRoutingTable indexShard : this) {
             for (ShardRouting shardRouting : indexShard) {
                 set.add(shardRouting.shardsIt());
@@ -397,7 +397,7 @@ public class IndexRoutingTable implements Iterable<IndexShardRoutingTable> {
          */
         private Builder initializeAsRestore(IndexMetaData indexMetaData, RestoreSource restoreSource, boolean asNew) {
             if (!shards.isEmpty()) {
-                throw new ElasticSearchIllegalStateException("trying to initialize an index with fresh shards, but already has shards created");
+                throw new ElasticsearchIllegalStateException("trying to initialize an index with fresh shards, but already has shards created");
             }
             for (int shardId = 0; shardId < indexMetaData.numberOfShards(); shardId++) {
                 IndexShardRoutingTable.Builder indexShardRoutingBuilder = new IndexShardRoutingTable.Builder(new ShardId(indexMetaData.index(), shardId), asNew ? false : true);
@@ -414,7 +414,7 @@ public class IndexRoutingTable implements Iterable<IndexShardRoutingTable> {
          */
         private Builder initializeEmpty(IndexMetaData indexMetaData, boolean asNew) {
             if (!shards.isEmpty()) {
-                throw new ElasticSearchIllegalStateException("trying to initialize an index with fresh shards, but already has shards created");
+                throw new ElasticsearchIllegalStateException("trying to initialize an index with fresh shards, but already has shards created");
             }
             for (int shardId = 0; shardId < indexMetaData.numberOfShards(); shardId++) {
                 IndexShardRoutingTable.Builder indexShardRoutingBuilder = new IndexShardRoutingTable.Builder(new ShardId(indexMetaData.index(), shardId), asNew ? false : true);

@@ -1,13 +1,13 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -16,18 +16,23 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.search.aggregations;
 
+import org.elasticsearch.common.lease.Releasable;
+import org.elasticsearch.common.lucene.ReaderContextAware;
+import org.elasticsearch.common.util.BigArrays;
 import org.elasticsearch.common.xcontent.XContentParser;
 import org.elasticsearch.search.aggregations.support.AggregationContext;
 import org.elasticsearch.search.internal.SearchContext;
+import org.elasticsearch.search.internal.SearchContext.Lifetime;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
-public abstract class Aggregator {
+public abstract class Aggregator implements Releasable, ReaderContextAware {
 
     /**
      * Defines the nature of the aggregator's aggregation execution when nested in other aggregators and the buckets they create.
@@ -48,12 +53,15 @@ public abstract class Aggregator {
     protected final String name;
     protected final Aggregator parent;
     protected final AggregationContext context;
+    protected final BigArrays bigArrays;
     protected final int depth;
     protected final long estimatedBucketCount;
 
     protected final BucketAggregationMode bucketAggregationMode;
     protected final AggregatorFactories factories;
     protected final Aggregator[] subAggregators;
+
+    private Map<String, Aggregator> subAggregatorbyName;
 
     /**
      * Constructs a new Aggregator.
@@ -70,11 +78,13 @@ public abstract class Aggregator {
         this.parent = parent;
         this.estimatedBucketCount = estimatedBucketsCount;
         this.context = context;
+        this.bigArrays = context.bigArrays();
         this.depth = parent == null ? 0 : 1 + parent.depth();
         this.bucketAggregationMode = bucketAggregationMode;
         assert factories != null : "sub-factories provided to BucketAggregator must not be null, use AggragatorFactories.EMPTY instead";
         this.factories = factories;
         this.subAggregators = factories.createSubAggregators(this, estimatedBucketsCount);
+        context.searchContext().addReleasable(this, Lifetime.PHASE);
     }
 
     /**
@@ -102,6 +112,20 @@ public abstract class Aggregator {
      */
     public Aggregator parent() {
         return parent;
+    }
+
+    public Aggregator[] subAggregators() {
+        return subAggregators;
+    }
+
+    public Aggregator subAggregator(String aggName) {
+        if (subAggregatorbyName == null) {
+            subAggregatorbyName = new HashMap<>(subAggregators.length);
+            for (int i = 0; i < subAggregators.length; i++) {
+                subAggregatorbyName.put(subAggregators[i].name, subAggregators[i]);
+            }
+        }
+        return subAggregatorbyName.get(aggName);
     }
 
     /**
@@ -149,6 +173,15 @@ public abstract class Aggregator {
         doPostCollection();
     }
 
+    /** Called upon release of the aggregator. */
+    @Override
+    public void close() {
+        doClose();
+    }
+
+    /** Release instance-specific data. */
+    protected void doClose() {}
+
     /**
      * Can be overriden by aggregator implementation to be called back when the collection phase ends.
      */
@@ -163,7 +196,7 @@ public abstract class Aggregator {
     public abstract InternalAggregation buildEmptyAggregation();
 
     protected final InternalAggregations buildEmptySubAggregations() {
-        List<InternalAggregation> aggs = new ArrayList<InternalAggregation>();
+        List<InternalAggregation> aggs = new ArrayList<>();
         for (Aggregator aggregator : subAggregators) {
             aggs.add(aggregator.buildEmptyAggregation());
         }

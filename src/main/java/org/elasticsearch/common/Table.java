@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -21,30 +21,34 @@ package org.elasticsearch.common;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
-import org.elasticsearch.ElasticSearchIllegalArgumentException;
+import org.elasticsearch.ElasticsearchIllegalStateException;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  */
 public class Table {
 
-    protected List<Cell> headers = new ArrayList<Cell>();
-    protected List<List<Cell>> rows = new ArrayList<List<Cell>>();
-
-    protected Map<String,List<Cell>> map = Maps.newHashMap();
-
-    protected List<Cell> currentCells;
-
-    protected boolean inHeaders = false;
+    private List<Cell> headers = new ArrayList<>();
+    private List<List<Cell>> rows = new ArrayList<>();
+    private Map<String, List<Cell>> map = Maps.newHashMap();
+    private Map<String, Cell> headerMap = Maps.newHashMap();
+    private List<Cell> currentCells;
+    private boolean inHeaders = false;
 
     public Table startHeaders() {
         inHeaders = true;
-        currentCells = new ArrayList<Cell>();
+        currentCells = new ArrayList<>();
         return this;
     }
 
     public Table endHeaders() {
+        if (currentCells == null || currentCells.isEmpty()) {
+            throw new ElasticsearchIllegalStateException("no headers added...");
+        }
         inHeaders = false;
         headers = currentCells;
         currentCells = null;
@@ -55,9 +59,13 @@ public class Table {
          *     header1 => [Cell, Cell, ...]
          *     header2 => [Cell, Cell, ...]
          *     header3 => [Cell, Cell, ...]
+         *
+         * Also populate map to look up headers by name.
+         *
          */
         for (Cell header : headers) {
-            map.put((String) header.value, new ArrayList<Cell>());
+            map.put(header.value.toString(), new ArrayList<Cell>());
+            headerMap.put(header.value.toString(), header);
         }
 
         return this;
@@ -65,15 +73,23 @@ public class Table {
 
     public Table startRow() {
         if (headers.isEmpty()) {
-            throw new ElasticSearchIllegalArgumentException("no headers added...");
+            throw new ElasticsearchIllegalStateException("no headers added...");
         }
-        currentCells = new ArrayList<Cell>(headers.size());
+        currentCells = new ArrayList<>(headers.size());
         return this;
     }
 
     public Table endRow(boolean check) {
+        if (currentCells == null) {
+            throw new ElasticsearchIllegalStateException("no row started...");
+        }
         if (check && (currentCells.size() != headers.size())) {
-            throw new ElasticSearchIllegalArgumentException("mismatch on number of cells in a row compared to header");
+            StringBuilder s = new StringBuilder();
+            s.append("mismatch on number of cells ");
+            s.append(currentCells.size());
+            s.append(" in a row compared to header ");
+            s.append(headers.size());
+            throw new ElasticsearchIllegalStateException(s.toString());
         }
         rows.add(currentCells);
         currentCells = null;
@@ -90,9 +106,12 @@ public class Table {
     }
 
     public Table addCell(Object value, String attributes) {
+        if (currentCells == null) {
+            throw new ElasticsearchIllegalStateException("no block started...");
+        }
         if (!inHeaders) {
             if (currentCells.size() == headers.size()) {
-                throw new ElasticSearchIllegalArgumentException("can't add more cells to a row than the header");
+                throw new ElasticsearchIllegalStateException("can't add more cells to a row than the header");
             }
         }
         Map<String, String> mAttr;
@@ -104,7 +123,7 @@ public class Table {
                 mAttr = headers.get(currentCells.size()).attr;
             }
         } else {
-            mAttr = new HashMap<String, String>();
+            mAttr = new HashMap<>();
             if (!inHeaders) {
                 // get the attributes of the header cell we are going to add
                 mAttr.putAll(headers.get(currentCells.size()).attr);
@@ -120,11 +139,12 @@ public class Table {
         }
 
         Cell cell = new Cell(value, mAttr);
+        int cellIndex = currentCells.size();
         currentCells.add(cell);
 
         // If we're in a value row, also populate the named column.
         if (!inHeaders) {
-            String hdr = (String) headers.get(currentCells.indexOf(cell)).value;
+            String hdr = (String) headers.get(cellIndex).value;
             map.get(hdr).add(cell);
         }
 
@@ -135,86 +155,39 @@ public class Table {
         return this.headers;
     }
 
-    public Iterable<List<Cell>> rowIterator() { return rows; }
-
     public List<List<Cell>> getRows() {
         return rows;
     }
 
-    public List<Cell>[] getRowsAsArray() {
-        return (List<Cell>[]) rows.toArray();
+    public Map<String, List<Cell>> getAsMap() {
+        return this.map;
     }
 
-    public Map<String, List<Cell>> getAsMap() { return this.map; }
-
-    public List<Cell> getHeadersFromNames(List<String> headerNames) {
-        List<Cell> hdrs = new ArrayList<Cell>();
-        for (String hdrToFind : headerNames) {
-            for (Cell header : headers) {
-                if (((String) header.value).equalsIgnoreCase(hdrToFind)) {
-                    hdrs.add(header);
-                }
-            }
-        }
-        return hdrs;
+    public Map<String, Cell> getHeaderMap() {
+        return this.headerMap;
     }
 
-    public Table addTable(Table t2) {
-        Table t1 = this;
-        Table t = new Table();
-
-        t.startHeaders();
-
-        for (Cell c : t1.getHeaders()) {
-            t.addCell(c);
-        }
-
-        for (Cell c : t2.getHeaders()) {
-            t.addCell(c);
-        }
-
-        t.endHeaders();
-
-        if (t1.rows.size() != t2.rows.size()) {
-            StringBuilder sb = new StringBuilder();
-            sb.append("cannot add a table with ");
-            sb.append(t2.rows.size());
-            sb.append(" rows to table with ");
-            sb.append(t1.rows.size());
-            sb.append(" rows");
-            throw new ElasticSearchIllegalArgumentException(sb.toString());
-        }
-
-        for (int i = 0; i < t1.rows.size(); i++) {
-            t.startRow();
-            for (Cell c : t1.rows.get(i)) {
-                t.addCell(c);
+    public Cell findHeaderByName(String header) {
+        for (Cell cell : headers) {
+            if (cell.value.toString().equals(header)) {
+                return cell;
             }
-            for (Cell c : t2.rows.get(i)) {
-                t.addCell(c);
-            }
-            t.endRow(false);
         }
-
-        return t;
-    }
-
-    public Table addColumn(String headerName, String attrs, List<Object> values) {
-        Table t = new Table();
-        t.startHeaders().addCell(headerName, attrs).endHeaders();
-        for (Object val : values) {
-            t.startRow().addCell(val).endRow();
-        }
-        return this.addTable(t);
+        return null;
     }
 
     public static class Cell {
         public final Object value;
         public final Map<String, String> attr;
 
+        public Cell(Object value, Cell other) {
+            this.value = value;
+            this.attr = other.attr;
+        }
+
         public Cell(Object value) {
             this.value = value;
-            this.attr = new HashMap<String, String>();
+            this.attr = new HashMap<>();
         }
 
         public Cell(Object value, Map<String, String> attr) {

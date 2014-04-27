@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,10 +19,10 @@
 
 package org.elasticsearch.action.admin.cluster.snapshots.restore;
 
-import org.elasticsearch.ElasticSearchGenerationException;
-import org.elasticsearch.ElasticSearchIllegalArgumentException;
+import org.elasticsearch.ElasticsearchGenerationException;
+import org.elasticsearch.ElasticsearchIllegalArgumentException;
 import org.elasticsearch.action.ActionRequestValidationException;
-import org.elasticsearch.action.support.IgnoreIndices;
+import org.elasticsearch.action.support.IndicesOptions;
 import org.elasticsearch.action.support.master.MasterNodeOperationRequest;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.bytes.BytesReference;
@@ -44,6 +44,7 @@ import static org.elasticsearch.common.Strings.hasLength;
 import static org.elasticsearch.common.settings.ImmutableSettings.Builder.EMPTY_SETTINGS;
 import static org.elasticsearch.common.settings.ImmutableSettings.readSettingsFromStream;
 import static org.elasticsearch.common.settings.ImmutableSettings.writeSettingsToStream;
+import static org.elasticsearch.common.xcontent.support.XContentMapValues.nodeBooleanValue;
 
 /**
  * Restore snapshot request
@@ -56,7 +57,7 @@ public class RestoreSnapshotRequest extends MasterNodeOperationRequest<RestoreSn
 
     private String[] indices = Strings.EMPTY_ARRAY;
 
-    private IgnoreIndices ignoreIndices = IgnoreIndices.DEFAULT;
+    private IndicesOptions indicesOptions = IndicesOptions.strict();
 
     private String renamePattern;
 
@@ -94,8 +95,8 @@ public class RestoreSnapshotRequest extends MasterNodeOperationRequest<RestoreSn
         if (indices == null) {
             validationException = addValidationError("indices are missing", validationException);
         }
-        if (ignoreIndices == null) {
-            validationException = addValidationError("ignoreIndices is missing", validationException);
+        if (indicesOptions == null) {
+            validationException = addValidationError("indicesOptions is missing", validationException);
         }
         if (settings == null) {
             validationException = addValidationError("settings are missing", validationException);
@@ -184,22 +185,24 @@ public class RestoreSnapshotRequest extends MasterNodeOperationRequest<RestoreSn
     }
 
     /**
-     * Specifies what type of requested indices to ignore. For example indices that don't exist.
+     * Specifies what type of requested indices to ignore and how to deal with wildcard expressions.
+     * For example indices that don't exist.
      *
-     * @return the desired behaviour regarding indices to ignore
+     * @return the desired behaviour regarding indices to ignore and wildcard indices expression
      */
-    public IgnoreIndices ignoreIndices() {
-        return ignoreIndices;
+    public IndicesOptions indicesOptions() {
+        return indicesOptions;
     }
 
     /**
-     * Specifies what type of requested indices to ignore. For example indices that don't exist.
+     * Specifies what type of requested indices to ignore and how to deal with wildcard expressions.
+     * For example indices that don't exist.
      *
-     * @param ignoreIndices the desired behaviour regarding indices to ignore
+     * @param indicesOptions the desired behaviour regarding indices to ignore and wildcard indices expressions
      * @return this request
      */
-    public RestoreSnapshotRequest ignoreIndices(IgnoreIndices ignoreIndices) {
-        this.ignoreIndices = ignoreIndices;
+    public RestoreSnapshotRequest indicesOptions(IndicesOptions indicesOptions) {
+        this.indicesOptions = indicesOptions;
         return this;
     }
 
@@ -322,7 +325,7 @@ public class RestoreSnapshotRequest extends MasterNodeOperationRequest<RestoreSn
             builder.map(source);
             settings(builder.string());
         } catch (IOException e) {
-            throw new ElasticSearchGenerationException("Failed to generate [" + source + "]", e);
+            throw new ElasticsearchGenerationException("Failed to generate [" + source + "]", e);
         }
         return this;
     }
@@ -368,7 +371,7 @@ public class RestoreSnapshotRequest extends MasterNodeOperationRequest<RestoreSn
         try {
             return source(source.bytes());
         } catch (Exception e) {
-            throw new ElasticSearchIllegalArgumentException("Failed to build json for repository request", e);
+            throw new ElasticsearchIllegalArgumentException("Failed to build json for repository request", e);
         }
     }
 
@@ -379,6 +382,11 @@ public class RestoreSnapshotRequest extends MasterNodeOperationRequest<RestoreSn
      * @return this request
      */
     public RestoreSnapshotRequest source(Map source) {
+        boolean ignoreUnavailable = IndicesOptions.lenient().ignoreUnavailable();
+        boolean allowNoIndices = IndicesOptions.lenient().allowNoIndices();
+        boolean expandWildcardsOpen = IndicesOptions.lenient().expandWildcardsOpen();
+        boolean expandWildcardsClosed = IndicesOptions.lenient().expandWildcardsClosed();
+
         for (Map.Entry<String, Object> entry : ((Map<String, Object>) source).entrySet()) {
             String name = entry.getKey();
             if (name.equals("indices")) {
@@ -387,40 +395,40 @@ public class RestoreSnapshotRequest extends MasterNodeOperationRequest<RestoreSn
                 } else if (entry.getValue() instanceof ArrayList) {
                     indices((ArrayList<String>) entry.getValue());
                 } else {
-                    throw new ElasticSearchIllegalArgumentException("malformed indices section, should be an array of strings");
+                    throw new ElasticsearchIllegalArgumentException("malformed indices section, should be an array of strings");
                 }
-            } else if (name.equals("ignore_indices")) {
-                if (entry.getValue() instanceof String) {
-                    ignoreIndices(IgnoreIndices.fromString((String) entry.getValue()));
-                } else {
-                    throw new ElasticSearchIllegalArgumentException("malformed ignore_indices");
-                }
+            } else if (name.equals("ignore_unavailable") || name.equals("ignoreUnavailable")) {
+                ignoreUnavailable = nodeBooleanValue(entry.getValue());
+            } else if (name.equals("allow_no_indices") || name.equals("allowNoIndices")) {
+                allowNoIndices = nodeBooleanValue(entry.getValue());
+            } else if (name.equals("expand_wildcards_open") || name.equals("expandWildcardsOpen")) {
+                expandWildcardsOpen = nodeBooleanValue(entry.getValue());
+            } else if (name.equals("expand_wildcards_closed") || name.equals("expandWildcardsClosed")) {
+                expandWildcardsClosed = nodeBooleanValue(entry.getValue());
             } else if (name.equals("settings")) {
                 if (!(entry.getValue() instanceof Map)) {
-                    throw new ElasticSearchIllegalArgumentException("malformed settings section, should indices an inner object");
+                    throw new ElasticsearchIllegalArgumentException("malformed settings section, should indices an inner object");
                 }
                 settings((Map<String, Object>) entry.getValue());
             } else if (name.equals("include_global_state")) {
-                if (!(entry.getValue() instanceof Boolean)) {
-                    throw new ElasticSearchIllegalArgumentException("malformed include_global_state, should be boolean");
-                }
-                includeGlobalState((Boolean) entry.getValue());
+                includeGlobalState = nodeBooleanValue(entry.getValue());
             } else if (name.equals("rename_pattern")) {
                 if (entry.getValue() instanceof String) {
                     renamePattern((String) entry.getValue());
                 } else {
-                    throw new ElasticSearchIllegalArgumentException("malformed rename_pattern");
+                    throw new ElasticsearchIllegalArgumentException("malformed rename_pattern");
                 }
             } else if (name.equals("rename_replacement")) {
                 if (entry.getValue() instanceof String) {
                     renameReplacement((String) entry.getValue());
                 } else {
-                    throw new ElasticSearchIllegalArgumentException("malformed rename_replacement");
+                    throw new ElasticsearchIllegalArgumentException("malformed rename_replacement");
                 }
             } else {
-                throw new ElasticSearchIllegalArgumentException("Unknown parameter " + name);
+                throw new ElasticsearchIllegalArgumentException("Unknown parameter " + name);
             }
         }
+        indicesOptions(IndicesOptions.fromOptions(ignoreUnavailable, allowNoIndices, expandWildcardsOpen, expandWildcardsClosed));
         return this;
     }
 
@@ -437,7 +445,7 @@ public class RestoreSnapshotRequest extends MasterNodeOperationRequest<RestoreSn
             try {
                 return source(XContentFactory.xContent(source).createParser(source).mapOrderedAndClose());
             } catch (Exception e) {
-                throw new ElasticSearchIllegalArgumentException("failed to parse repository source [" + source + "]", e);
+                throw new ElasticsearchIllegalArgumentException("failed to parse repository source [" + source + "]", e);
             }
         }
         return this;
@@ -470,7 +478,7 @@ public class RestoreSnapshotRequest extends MasterNodeOperationRequest<RestoreSn
             try {
                 return source(XContentFactory.xContent(source, offset, length).createParser(source, offset, length).mapOrderedAndClose());
             } catch (IOException e) {
-                throw new ElasticSearchIllegalArgumentException("failed to parse repository source", e);
+                throw new ElasticsearchIllegalArgumentException("failed to parse repository source", e);
             }
         }
         return this;
@@ -488,7 +496,7 @@ public class RestoreSnapshotRequest extends MasterNodeOperationRequest<RestoreSn
         try {
             return source(XContentFactory.xContent(source).createParser(source).mapOrderedAndClose());
         } catch (IOException e) {
-            throw new ElasticSearchIllegalArgumentException("failed to parse template source", e);
+            throw new ElasticsearchIllegalArgumentException("failed to parse template source", e);
         }
     }
 
@@ -498,7 +506,7 @@ public class RestoreSnapshotRequest extends MasterNodeOperationRequest<RestoreSn
         snapshot = in.readString();
         repository = in.readString();
         indices = in.readStringArray();
-        ignoreIndices = IgnoreIndices.fromId(in.readByte());
+        indicesOptions = IndicesOptions.readIndicesOptions(in);
         renamePattern = in.readOptionalString();
         renameReplacement = in.readOptionalString();
         waitForCompletion = in.readBoolean();
@@ -512,7 +520,7 @@ public class RestoreSnapshotRequest extends MasterNodeOperationRequest<RestoreSn
         out.writeString(snapshot);
         out.writeString(repository);
         out.writeStringArray(indices);
-        out.writeByte(ignoreIndices.id());
+        indicesOptions.writeIndicesOptions(out);
         out.writeOptionalString(renamePattern);
         out.writeOptionalString(renameReplacement);
         out.writeBoolean(waitForCompletion);

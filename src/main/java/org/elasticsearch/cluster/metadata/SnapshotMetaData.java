@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -21,7 +21,7 @@ package org.elasticsearch.cluster.metadata;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import org.elasticsearch.ElasticSearchIllegalArgumentException;
+import org.elasticsearch.ElasticsearchIllegalArgumentException;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.xcontent.ToXContent;
@@ -203,7 +203,8 @@ public class SnapshotMetaData implements MetaData.Custom {
         STARTED((byte) 1),
         SUCCESS((byte) 2),
         FAILED((byte) 3),
-        ABORTED((byte) 4);
+        ABORTED((byte) 4),
+        MISSING((byte) 5);
 
         private byte value;
 
@@ -216,7 +217,43 @@ public class SnapshotMetaData implements MetaData.Custom {
         }
 
         public boolean completed() {
-            return this == SUCCESS || this == FAILED;
+            switch (this) {
+                case INIT:
+                    return false;
+                case STARTED:
+                    return false;
+                case SUCCESS:
+                    return true;
+                case FAILED:
+                    return true;
+                case ABORTED:
+                    return false;
+                case MISSING:
+                    return true;
+                default:
+                    assert false;
+                    return true;
+            }
+        }
+
+        public boolean failed() {
+            switch (this) {
+                case INIT:
+                    return false;
+                case STARTED:
+                    return false;
+                case SUCCESS:
+                    return false;
+                case FAILED:
+                    return true;
+                case ABORTED:
+                    return true;
+                case MISSING:
+                    return true;
+                default:
+                    assert false;
+                    return false;
+            }
         }
 
         public static State fromValue(byte value) {
@@ -231,8 +268,10 @@ public class SnapshotMetaData implements MetaData.Custom {
                     return FAILED;
                 case 4:
                     return ABORTED;
+                case 5:
+                    return MISSING;
                 default:
-                    throw new ElasticSearchIllegalArgumentException("No snapshot state for value [" + value + "]");
+                    throw new ElasticsearchIllegalArgumentException("No snapshot state for value [" + value + "]");
             }
         }
     }

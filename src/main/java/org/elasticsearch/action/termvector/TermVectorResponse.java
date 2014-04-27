@@ -1,11 +1,11 @@
 /*
- * Licensed to Elastic Search and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. Elastic Search licenses this 
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -28,7 +28,7 @@ import org.apache.lucene.util.ArrayUtil;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.CharsRef;
 import org.apache.lucene.util.UnicodeUtil;
-import org.elasticsearch.ElasticSearchIllegalStateException;
+import org.elasticsearch.ElasticsearchIllegalStateException;
 import org.elasticsearch.action.ActionResponse;
 import org.elasticsearch.action.termvector.TermVectorRequest.Flag;
 import org.elasticsearch.common.bytes.BytesArray;
@@ -68,7 +68,7 @@ public class TermVectorResponse extends ActionResponse implements ToXContent {
         public static final XContentBuilderString _TYPE = new XContentBuilderString("_type");
         public static final XContentBuilderString _ID = new XContentBuilderString("_id");
         public static final XContentBuilderString _VERSION = new XContentBuilderString("_version");
-        public static final XContentBuilderString EXISTS = new XContentBuilderString("exists");
+        public static final XContentBuilderString FOUND = new XContentBuilderString("found");
         public static final XContentBuilderString TERMS = new XContentBuilderString("terms");
         public static final XContentBuilderString TERM_VECTORS = new XContentBuilderString("term_vectors");
 
@@ -164,12 +164,11 @@ public class TermVectorResponse extends ActionResponse implements ToXContent {
         assert index != null;
         assert type != null;
         assert id != null;
-        builder.startObject();
         builder.field(FieldStrings._INDEX, index);
         builder.field(FieldStrings._TYPE, type);
         builder.field(FieldStrings._ID, id);
         builder.field(FieldStrings._VERSION, docVersion);
-        builder.field(FieldStrings.EXISTS, isExists());
+        builder.field(FieldStrings.FOUND, isExists());
         if (!isExists()) {
             builder.endObject();
             return builder;
@@ -181,7 +180,6 @@ public class TermVectorResponse extends ActionResponse implements ToXContent {
         while (fieldIter.hasNext()) {
             buildField(builder, spare, theFields, fieldIter);
         }
-        builder.endObject();
         builder.endObject();
         return builder;
 
@@ -309,7 +307,7 @@ public class TermVectorResponse extends ActionResponse implements ToXContent {
             assert ((sumDocFreq == -1)) : "docCount was -1 but sumDocFreq ain't!";
             assert ((sumTotalTermFrequencies == -1)) : "docCount was -1 but sumTotalTermFrequencies ain't!";
         } else {
-            throw new ElasticSearchIllegalStateException(
+            throw new ElasticsearchIllegalStateException(
                     "Something is wrong with the field statistics of the term vector request: Values are " + "\n"
                             + FieldStrings.SUM_DOC_FREQ + " " + sumDocFreq + "\n" + FieldStrings.DOC_COUNT + " " + docCount + "\n"
                             + FieldStrings.SUM_TTF + " " + sumTotalTermFrequencies);

@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -264,7 +264,7 @@ public class BulkItemResponse implements Streamable {
         if (in.readBoolean()) {
             String fIndex = in.readSharedString();
             String fType = in.readSharedString();
-            String fId = in.readString();
+            String fId = in.readOptionalString();
             String fMessage = in.readString();
             RestStatus status = RestStatus.readFrom(in);
             failure = new Failure(fIndex, fType, fId, fMessage, status);
@@ -294,7 +294,7 @@ public class BulkItemResponse implements Streamable {
             out.writeBoolean(true);
             out.writeSharedString(failure.getIndex());
             out.writeSharedString(failure.getType());
-            out.writeString(failure.getId());
+            out.writeOptionalString(failure.getId());
             out.writeString(failure.getMessage());
             RestStatus.writeTo(out, failure.getStatus());
         }

@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -42,8 +42,10 @@ import org.elasticsearch.search.SearchShardTarget;
 import org.elasticsearch.search.action.SearchServiceListener;
 import org.elasticsearch.search.action.SearchServiceTransportAction;
 import org.elasticsearch.search.controller.SearchPhaseController;
+import org.elasticsearch.search.fetch.FetchSearchRequest;
 import org.elasticsearch.search.internal.InternalSearchResponse;
 import org.elasticsearch.search.internal.ShardSearchRequest;
+import org.elasticsearch.search.query.QuerySearchResult;
 import org.elasticsearch.search.query.QuerySearchResultProvider;
 import org.elasticsearch.threadpool.ThreadPool;
 
@@ -87,7 +89,7 @@ public abstract class TransportSearchTypeAction extends TransportAction<SearchRe
         protected final int expectedSuccessfulOps;
         private final int expectedTotalOps;
 
-        protected final AtomicInteger successulOps = new AtomicInteger();
+        protected final AtomicInteger successfulOps = new AtomicInteger();
         private final AtomicInteger totalOps = new AtomicInteger();
 
         protected final AtomicArray<FirstResult> firstResults;
@@ -95,6 +97,7 @@ public abstract class TransportSearchTypeAction extends TransportAction<SearchRe
         private final Object shardFailuresMutex = new Object();
         protected volatile ScoreDoc[] sortedShardList;
 
+        protected final boolean useSlowScroll;
         protected final long startTime = System.currentTimeMillis();
 
         protected BaseAsyncAction(SearchRequest request, ActionListener<SearchResponse> listener) {
@@ -106,7 +109,7 @@ public abstract class TransportSearchTypeAction extends TransportAction<SearchRe
 
             clusterState.blocks().globalBlockedRaiseException(ClusterBlockLevel.READ);
 
-            String[] concreteIndices = clusterState.metaData().concreteIndices(request.indices(), request.ignoreIndices(), true);
+            String[] concreteIndices = clusterState.metaData().concreteIndices(request.indices(), request.indicesOptions());
 
             for (String index : concreteIndices) {
                 clusterState.blocks().indexBlockedRaiseException(ClusterBlockLevel.READ, index);
@@ -119,13 +122,25 @@ public abstract class TransportSearchTypeAction extends TransportAction<SearchRe
             // we need to add 1 for non active partition, since we count it in the total!
             expectedTotalOps = shardsIts.totalSizeWith1ForEmpty();
 
-            firstResults = new AtomicArray<FirstResult>(shardsIts.size());
+            firstResults = new AtomicArray<>(shardsIts.size());
+            // Not so nice, but we need to know if there're nodes below the supported version
+            // and if so fall back to classic scroll (based on from). We need to check every node
+            // because we don't to what nodes we end up sending the request (shard may fail or relocate)
+            boolean useSlowScroll = false;
+            if (request.scroll() != null) {
+                for (DiscoveryNode discoveryNode : clusterState.nodes()) {
+                    if (discoveryNode.getVersion().before(ParsedScrollId.SCROLL_SEARCH_AFTER_MINIMUM_VERSION)) {
+                        useSlowScroll = true;
+                    }
+                }
+            }
+            this.useSlowScroll = useSlowScroll;
         }
 
         public void start() {
             if (expectedSuccessfulOps == 0) {
                 // no search shards to search on, bail with empty response (it happens with search across _all with no indices around and consistent with broadcast operations)
-                listener.onResponse(new SearchResponse(InternalSearchResponse.EMPTY, null, 0, 0, System.currentTimeMillis() - startTime, ShardSearchFailure.EMPTY_ARRAY));
+                listener.onResponse(new SearchResponse(InternalSearchResponse.empty(), null, 0, 0, System.currentTimeMillis() - startTime, ShardSearchFailure.EMPTY_ARRAY));
                 return;
             }
             request.beforeStart();
@@ -213,7 +228,7 @@ public abstract class TransportSearchTypeAction extends TransportAction<SearchRe
                     onFirstPhaseResult(shardIndex, shard, null, shardIt, new NoShardAvailableActionException(shardIt.shardId()));
                 } else {
                     String[] filteringAliases = clusterState.metaData().filteringAliases(shard.index(), request.indices());
-                    sendExecuteFirstPhase(node, internalSearchRequest(shard, shardsIts.size(), request, filteringAliases, startTime), new SearchServiceListener<FirstResult>() {
+                    sendExecuteFirstPhase(node, internalSearchRequest(shard, shardsIts.size(), request, filteringAliases, startTime, useSlowScroll), new SearchServiceListener<FirstResult>() {
                         @Override
                         public void onResult(FirstResult result) {
                             onFirstPhaseResult(shardIndex, shard, result, shardIt);
@@ -231,11 +246,13 @@ public abstract class TransportSearchTypeAction extends TransportAction<SearchRe
         void onFirstPhaseResult(int shardIndex, ShardRouting shard, FirstResult result, ShardIterator shardIt) {
             result.shardTarget(new SearchShardTarget(shard.currentNodeId(), shard.index(), shard.id()));
             processFirstPhaseResult(shardIndex, shard, result);
-
+            // we need to increment successful ops first before we compare the exit condition otherwise if we
+            // are fast we could concurrently update totalOps but then preempt one of the threads which can
+            // cause the successor to read a wrong value from successfulOps if second phase is very fast ie. count etc.
+            successfulOps.incrementAndGet();
             // increment all the "future" shards to update the total ops since we some may work and some may not...
             // and when that happens, we break on total ops, so we must maintain them
-            int xTotalOps = totalOps.addAndGet(shardIt.remaining() + 1);
-            successulOps.incrementAndGet();
+            final int xTotalOps = totalOps.addAndGet(shardIt.remaining() + 1);
             if (xTotalOps == expectedTotalOps) {
                 try {
                     innerMoveToSecondPhase();
@@ -262,9 +279,11 @@ public abstract class TransportSearchTypeAction extends TransportAction<SearchRe
                         } else {
                             logger.debug(shardIt.shardId() + ": Failed to execute [" + request + "]", t);
                         }
+                    } else if (logger.isTraceEnabled()) {
+                        logger.trace("{}: Failed to execute [{}]", t, shard, request);
                     }
                 }
-                if (successulOps.get() == 0) {
+                if (successfulOps.get() == 0) {
                     if (logger.isDebugEnabled()) {
                         logger.debug("All shards failed for phase: [{}]", firstPhaseName(), t);
                     }
@@ -281,7 +300,7 @@ public abstract class TransportSearchTypeAction extends TransportAction<SearchRe
                 final ShardRouting nextShard = shardIt.nextOrNull();
                 final boolean lastShard = nextShard == null;
                 // trace log this exception
-                if (logger.isTraceEnabled() && t != null) {
+                if (logger.isTraceEnabled()) {
                     logger.trace(executionFailureMsg(shard, shardIt, request, lastShard), t);
                 }
                 if (!lastShard) {
@@ -344,7 +363,7 @@ public abstract class TransportSearchTypeAction extends TransportAction<SearchRe
             if (shardFailures == null) {
                 synchronized (shardFailuresMutex) {
                     if (shardFailures == null) {
-                        shardFailures = new AtomicArray<ShardSearchFailure>(shardsIts.size());
+                        shardFailures = new AtomicArray<>(shardsIts.size());
                     }
                 }
             }
@@ -381,10 +400,23 @@ public abstract class TransportSearchTypeAction extends TransportAction<SearchRe
             }
         }
 
+        protected FetchSearchRequest createFetchRequest(QuerySearchResult queryResult, AtomicArray.Entry<IntArrayList> entry, ScoreDoc[] lastEmittedDocPerShard) {
+            if (lastEmittedDocPerShard != null) {
+                ScoreDoc lastEmittedDoc = lastEmittedDocPerShard[entry.index];
+                return new FetchSearchRequest(request, queryResult.id(), entry.value, lastEmittedDoc);
+            } else {
+                return new FetchSearchRequest(request, queryResult.id(), entry.value);
+            }
+        }
+
         protected abstract void sendExecuteFirstPhase(DiscoveryNode node, ShardSearchRequest request, SearchServiceListener<FirstResult> listener);
 
         protected final void processFirstPhaseResult(int shardIndex, ShardRouting shard, FirstResult result) {
             firstResults.set(shardIndex, result);
+
+            if (logger.isTraceEnabled()) {
+                logger.trace("got first-phase result from {}", result != null ? result.shardTarget() : null);
+            }
 
             // clean a previous error on this shard group (note, this code will be serialized on the same shardIndex value level
             // so its ok concurrency wise to miss potentially the shard failures being created because of another failure

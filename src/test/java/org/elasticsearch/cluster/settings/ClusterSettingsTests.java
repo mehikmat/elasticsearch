@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -23,14 +23,17 @@ import org.elasticsearch.action.admin.cluster.settings.ClusterUpdateSettingsResp
 import org.elasticsearch.cluster.routing.allocation.decider.DisableAllocationDecider;
 import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.discovery.DiscoverySettings;
 import org.elasticsearch.test.ElasticsearchIntegrationTest;
 import org.hamcrest.Matchers;
 import org.junit.Test;
 
-import static org.hamcrest.Matchers.notNullValue;
-import static org.hamcrest.Matchers.nullValue;
+import static org.elasticsearch.test.ElasticsearchIntegrationTest.ClusterScope;
+import static org.elasticsearch.test.ElasticsearchIntegrationTest.Scope.TEST;
+import static org.elasticsearch.test.hamcrest.ElasticsearchAssertions.assertAcked;
+import static org.hamcrest.Matchers.*;
 
-@ElasticsearchIntegrationTest.ClusterScope(scope = ElasticsearchIntegrationTest.Scope.TEST, numNodes = 1)
+@ClusterScope(scope = TEST)
 public class ClusterSettingsTests extends ElasticsearchIntegrationTest {
 
     @Test
@@ -43,6 +46,7 @@ public class ClusterSettingsTests extends ElasticsearchIntegrationTest {
                 .setTransientSettings(ImmutableSettings.builder().put(key1, value1).build())
                 .get();
 
+        assertAcked(response);
         assertThat(response.getTransientSettings().getAsMap().entrySet(), Matchers.emptyIterable());
     }
 
@@ -64,6 +68,7 @@ public class ClusterSettingsTests extends ElasticsearchIntegrationTest {
                 .execute()
                 .actionGet();
 
+        assertAcked(response1);
         assertThat(response1.getTransientSettings().get(key1), notNullValue());
         assertThat(response1.getTransientSettings().get(key2), nullValue());
         assertThat(response1.getPersistentSettings().get(key1), nullValue());
@@ -79,6 +84,7 @@ public class ClusterSettingsTests extends ElasticsearchIntegrationTest {
                 .execute()
                 .actionGet();
 
+        assertAcked(response2);
         assertThat(response2.getTransientSettings().get(key1), notNullValue());
         assertThat(response2.getTransientSettings().get(key2), notNullValue());
         assertThat(response2.getPersistentSettings().get(key1), nullValue());
@@ -94,9 +100,45 @@ public class ClusterSettingsTests extends ElasticsearchIntegrationTest {
                 .execute()
                 .actionGet();
 
+        assertAcked(response3);
         assertThat(response3.getTransientSettings().get(key1), nullValue());
         assertThat(response3.getTransientSettings().get(key2), nullValue());
         assertThat(response3.getPersistentSettings().get(key1), notNullValue());
         assertThat(response3.getPersistentSettings().get(key2), notNullValue());
+    }
+
+    @Test
+    public void testUpdateDiscoveryPublishTimeout() {
+
+        DiscoverySettings discoverySettings = cluster().getInstance(DiscoverySettings.class);
+
+        assertThat(discoverySettings.getPublishTimeout(), equalTo(DiscoverySettings.DEFAULT_PUBLISH_TIMEOUT));
+
+        ClusterUpdateSettingsResponse response = client().admin().cluster()
+                .prepareUpdateSettings()
+                .setTransientSettings(ImmutableSettings.builder().put(DiscoverySettings.PUBLISH_TIMEOUT, "1s").build())
+                .get();
+
+        assertAcked(response);
+        assertThat(response.getTransientSettings().getAsMap().get(DiscoverySettings.PUBLISH_TIMEOUT), equalTo("1s"));
+        assertThat(discoverySettings.getPublishTimeout().seconds(), equalTo(1l));
+
+        response = client().admin().cluster()
+                .prepareUpdateSettings()
+                .setTransientSettings(ImmutableSettings.builder().put(DiscoverySettings.PUBLISH_TIMEOUT, "whatever").build())
+                .get();
+
+        assertAcked(response);
+        assertThat(response.getTransientSettings().getAsMap().entrySet(), Matchers.emptyIterable());
+        assertThat(discoverySettings.getPublishTimeout().seconds(), equalTo(1l));
+
+        response = client().admin().cluster()
+                .prepareUpdateSettings()
+                .setTransientSettings(ImmutableSettings.builder().put(DiscoverySettings.PUBLISH_TIMEOUT, -1).build())
+                .get();
+
+        assertAcked(response);
+        assertThat(response.getTransientSettings().getAsMap().entrySet(), Matchers.emptyIterable());
+        assertThat(discoverySettings.getPublishTimeout().seconds(), equalTo(1l));
     }
 }

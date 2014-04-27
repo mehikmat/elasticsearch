@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -39,6 +39,8 @@ import org.elasticsearch.node.settings.NodeSettingsService;
  */
 public class ConcurrentRebalanceAllocationDecider extends AllocationDecider {
 
+    public static final String NAME = "concurrent_rebalance";
+
     public static final String CLUSTER_ROUTING_ALLOCATION_CLUSTER_CONCURRENT_REBALANCE = "cluster.routing.allocation.cluster_concurrent_rebalance";
 
     class ApplySettings implements NodeSettingsService.Listener {
@@ -65,11 +67,12 @@ public class ConcurrentRebalanceAllocationDecider extends AllocationDecider {
     @Override
     public Decision canRebalance(ShardRouting shardRouting, RoutingAllocation allocation) {
         if (clusterConcurrentRebalance == -1) {
-            return Decision.YES;
+            return allocation.decision(Decision.YES, NAME, "all concurrent rebalances are allowed");
         }
         if (allocation.routingNodes().getRelocatingShardCount() >= clusterConcurrentRebalance) {
-            return Decision.NO;
+            return allocation.decision(Decision.NO, NAME, "too man concurrent rebalances [%d], limit: [%d]",
+                    allocation.routingNodes().getRelocatingShardCount(), clusterConcurrentRebalance);
         }
-        return Decision.YES;
+        return allocation.decision(Decision.YES, NAME, "below threshold [%d] for concurrent rebalances", clusterConcurrentRebalance);
     }
 }

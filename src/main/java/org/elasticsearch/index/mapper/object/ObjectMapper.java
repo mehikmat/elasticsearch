@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -26,7 +26,7 @@ import org.apache.lucene.index.Term;
 import org.apache.lucene.queries.TermFilter;
 import org.apache.lucene.search.Filter;
 import org.apache.lucene.util.BytesRef;
-import org.elasticsearch.ElasticSearchIllegalStateException;
+import org.elasticsearch.ElasticsearchIllegalStateException;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.collect.ImmutableOpenMap;
 import org.elasticsearch.common.joda.FormatDateTimeFormatter;
@@ -38,7 +38,6 @@ import org.elasticsearch.index.mapper.ParseContext.Document;
 import org.elasticsearch.index.mapper.internal.AllFieldMapper;
 import org.elasticsearch.index.mapper.internal.TypeFieldMapper;
 import org.elasticsearch.index.mapper.internal.UidFieldMapper;
-import org.elasticsearch.index.mapper.multifield.MultiFieldMapper;
 
 import java.io.IOException;
 import java.util.*;
@@ -157,7 +156,7 @@ public class ObjectMapper implements Mapper, AllFieldMapper.IncludeInAll {
             context.path().pathType(pathType);
             context.path().add(name);
 
-            Map<String, Mapper> mappers = new HashMap<String, Mapper>();
+            Map<String, Mapper> mappers = new HashMap<>();
             for (Mapper.Builder builder : mappersBuilders) {
                 Mapper mapper = builder.build(context);
                 mappers.put(mapper.name(), mapper);
@@ -242,8 +241,6 @@ public class ObjectMapper implements Mapper, AllFieldMapper.IncludeInAll {
                     // lets see if we can derive this...
                     if (propNode.get("properties") != null) {
                         type = ObjectMapper.CONTENT_TYPE;
-                    } else if (propNode.get("fields") != null) {
-                        type = MultiFieldMapper.CONTENT_TYPE;
                     } else if (propNode.size() == 1 && propNode.get("enabled") != null) {
                         // if there is a single property with the enabled flag on it, make it an object
                         // (usually, setting enabled to false to not index any type, including core values, which
@@ -337,6 +334,17 @@ public class ObjectMapper implements Mapper, AllFieldMapper.IncludeInAll {
         for (ObjectObjectCursor<String, Mapper> cursor : mappers) {
             if (cursor.value instanceof AllFieldMapper.IncludeInAll) {
                 ((AllFieldMapper.IncludeInAll) cursor.value).includeInAllIfNotSet(includeInAll);
+            }
+        }
+    }
+
+    @Override
+    public void unsetIncludeInAll() {
+        includeInAll = null;
+        // when called from outside, apply this on all the inner mappers
+        for (ObjectObjectCursor<String, Mapper> cursor : mappers) {
+            if (cursor.value instanceof AllFieldMapper.IncludeInAll) {
+                ((AllFieldMapper.IncludeInAll) cursor.value).unsetIncludeInAll();
             }
         }
     }
@@ -606,8 +614,12 @@ public class ObjectMapper implements Mapper, AllFieldMapper.IncludeInAll {
         Mapper mapper = mappers.get(currentFieldName);
         if (mapper != null) {
             mapper.parse(context);
-            return;
+        } else {
+            parseDynamicValue(context, currentFieldName, token);
         }
+    }
+
+    public void parseDynamicValue(final ParseContext context, String currentFieldName, XContentParser.Token token) throws IOException {
         Dynamic dynamic = this.dynamic;
         if (dynamic == null) {
             dynamic = context.root().dynamic();
@@ -622,7 +634,7 @@ public class ObjectMapper implements Mapper, AllFieldMapper.IncludeInAll {
         // its not the end of the world, since we add it to the mappers once we create it
         // so next time we won't even get here for this field
         synchronized (mutex) {
-            mapper = mappers.get(currentFieldName);
+            Mapper mapper = mappers.get(currentFieldName);
             if (mapper == null) {
                 BuilderContext builderContext = new BuilderContext(context.indexSettings(), context.path());
                 if (token == XContentParser.Token.VALUE_STRING) {
@@ -774,7 +786,7 @@ public class ObjectMapper implements Mapper, AllFieldMapper.IncludeInAll {
                         mapper = builder.build(builderContext);
                     } else {
                         // TODO how do we identify dynamically that its a binary value?
-                        throw new ElasticSearchIllegalStateException("Can't handle serializing a dynamic type with content token [" + token + "] and field name [" + currentFieldName + "]");
+                        throw new ElasticsearchIllegalStateException("Can't handle serializing a dynamic type with content token [" + token + "] and field name [" + currentFieldName + "]");
                     }
                 }
 
@@ -830,7 +842,7 @@ public class ObjectMapper implements Mapper, AllFieldMapper.IncludeInAll {
 
         doMerge(mergeWithObject, mergeContext);
 
-        List<Mapper> mappersToPut = new ArrayList<Mapper>();
+        List<Mapper> mappersToPut = new ArrayList<>();
         FieldMapperListener.Aggregator newFieldMappers = new FieldMapperListener.Aggregator();
         ObjectMapperListener.Aggregator newObjectMappers = new ObjectMapperListener.Aggregator();
         synchronized (mutex) {
@@ -845,21 +857,7 @@ public class ObjectMapper implements Mapper, AllFieldMapper.IncludeInAll {
                         mergeWithMapper.traverse(newObjectMappers);
                     }
                 } else {
-                    if ((mergeWithMapper instanceof MultiFieldMapper) && !(mergeIntoMapper instanceof MultiFieldMapper)) {
-                        MultiFieldMapper mergeWithMultiField = (MultiFieldMapper) mergeWithMapper;
-                        mergeWithMultiField.merge(mergeIntoMapper, mergeContext);
-                        if (!mergeContext.mergeFlags().simulate()) {
-                            mappersToPut.add(mergeWithMultiField);
-                            // now, record mappers to traverse events for all mappers
-                            // we don't just traverse mergeWithMultiField as we already have the default handler
-                            for (Mapper mapper : mergeWithMultiField.mappers().values()) {
-                                mapper.traverse(newFieldMappers);
-                                mapper.traverse(newObjectMappers);
-                            }
-                        }
-                    } else {
-                        mergeIntoMapper.merge(mergeWithMapper, mergeContext);
-                    }
+                    mergeIntoMapper.merge(mergeWithMapper, mergeContext);
                 }
             }
             if (!newFieldMappers.mappers.isEmpty()) {
@@ -926,7 +924,7 @@ public class ObjectMapper implements Mapper, AllFieldMapper.IncludeInAll {
         doXContent(builder, params);
 
         // sort the mappers so we get consistent serialization format
-        TreeMap<String, Mapper> sortedMappers = new TreeMap<String, Mapper>();
+        TreeMap<String, Mapper> sortedMappers = new TreeMap<>();
         for (ObjectObjectCursor<String, Mapper> cursor : mappers) {
             sortedMappers.put(cursor.key, cursor.value);
         }
@@ -938,7 +936,7 @@ public class ObjectMapper implements Mapper, AllFieldMapper.IncludeInAll {
             }
         }
         if (additionalMappers != null && additionalMappers.length > 0) {
-            TreeMap<String, Mapper> additionalSortedMappers = new TreeMap<String, Mapper>();
+            TreeMap<String, Mapper> additionalSortedMappers = new TreeMap<>();
             for (Mapper mapper : additionalMappers) {
                 additionalSortedMappers.put(mapper.name(), mapper);
             }

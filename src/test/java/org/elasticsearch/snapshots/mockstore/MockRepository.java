@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -20,7 +20,7 @@
 package org.elasticsearch.snapshots.mockstore;
 
 import com.google.common.collect.ImmutableMap;
-import org.elasticsearch.ElasticSearchException;
+import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.common.blobstore.BlobMetaData;
 import org.elasticsearch.common.blobstore.BlobPath;
 import org.elasticsearch.common.blobstore.BlobStore;
@@ -88,7 +88,7 @@ public class MockRepository extends FsRepository {
     }
 
     @Override
-    protected void doStop() throws ElasticSearchException {
+    protected void doStop() throws ElasticsearchException {
         unblock();
         super.doStop();
     }
@@ -115,7 +115,7 @@ public class MockRepository extends FsRepository {
     }
 
     public class MockBlobStore extends BlobStoreWrapper {
-        ConcurrentMap<String, AtomicLong> accessCounts = new ConcurrentHashMap<String, AtomicLong>();
+        ConcurrentMap<String, AtomicLong> accessCounts = new ConcurrentHashMap<>();
 
         private long incrementAndGet(String path) {
             AtomicLong value = accessCounts.get(path);
@@ -187,9 +187,9 @@ public class MockRepository extends FsRepository {
                     return ((bytes[i++] & 0xFF) << 24) | ((bytes[i++] & 0xFF) << 16)
                             | ((bytes[i++] & 0xFF) << 8) | (bytes[i++] & 0xFF);
                 } catch (NoSuchAlgorithmException ex) {
-                    throw new ElasticSearchException("cannot calculate hashcode", ex);
+                    throw new ElasticsearchException("cannot calculate hashcode", ex);
                 } catch (UnsupportedEncodingException ex) {
-                    throw new ElasticSearchException("cannot calculate hashcode", ex);
+                    throw new ElasticsearchException("cannot calculate hashcode", ex);
                 }
             }
 
@@ -231,19 +231,23 @@ public class MockRepository extends FsRepository {
                 }
             }
 
-            private void maybeIOExceptionOrBlock(String blobName, ImmutableBlobContainer.WriterListener listener) {
+            private boolean maybeIOExceptionOrBlock(String blobName, ImmutableBlobContainer.WriterListener listener) {
                 try {
                     maybeIOExceptionOrBlock(blobName);
+                    return true;
                 } catch (IOException ex) {
                     listener.onFailure(ex);
+                    return false;
                 }
             }
 
-            private void maybeIOExceptionOrBlock(String blobName, ImmutableBlobContainer.ReadBlobListener listener) {
+            private boolean maybeIOExceptionOrBlock(String blobName, ImmutableBlobContainer.ReadBlobListener listener) {
                 try {
                     maybeIOExceptionOrBlock(blobName);
+                    return true;
                 } catch (IOException ex) {
                     listener.onFailure(ex);
+                    return false;
                 }
             }
 
@@ -254,8 +258,9 @@ public class MockRepository extends FsRepository {
 
             @Override
             public void writeBlob(String blobName, InputStream is, long sizeInBytes, WriterListener listener) {
-                maybeIOExceptionOrBlock(blobName, listener);
-                super.writeBlob(blobName, is, sizeInBytes, listener);
+                if (maybeIOExceptionOrBlock(blobName, listener) ) {
+                    super.writeBlob(blobName, is, sizeInBytes, listener);
+                }
             }
 
             @Override
@@ -271,8 +276,9 @@ public class MockRepository extends FsRepository {
 
             @Override
             public void readBlob(String blobName, ReadBlobListener listener) {
-                maybeIOExceptionOrBlock(blobName, listener);
-                super.readBlob(blobName, listener);
+                if (maybeIOExceptionOrBlock(blobName, listener)) {
+                    super.readBlob(blobName, listener);
+                }
             }
 
             @Override

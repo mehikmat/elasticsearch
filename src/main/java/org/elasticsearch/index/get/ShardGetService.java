@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -22,7 +22,8 @@ package org.elasticsearch.index.get;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
 import org.apache.lucene.index.Term;
-import org.elasticsearch.ElasticSearchException;
+import org.elasticsearch.ElasticsearchException;
+import org.elasticsearch.ElasticsearchIllegalArgumentException;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.collect.Tuple;
@@ -98,7 +99,7 @@ public class ShardGetService extends AbstractIndexShardComponent {
     }
 
     public GetResult get(String type, String id, String[] gFields, boolean realtime, long version, VersionType versionType, FetchSourceContext fetchSourceContext)
-            throws ElasticSearchException {
+            throws ElasticsearchException {
         currentMetric.inc();
         try {
             long now = System.nanoTime();
@@ -166,7 +167,7 @@ public class ShardGetService extends AbstractIndexShardComponent {
         return FetchSourceContext.DO_NOT_FETCH_SOURCE;
     }
 
-    public GetResult innerGet(String type, String id, String[] gFields, boolean realtime, long version, VersionType versionType, FetchSourceContext fetchSourceContext) throws ElasticSearchException {
+    public GetResult innerGet(String type, String id, String[] gFields, boolean realtime, long version, VersionType versionType, FetchSourceContext fetchSourceContext) throws ElasticsearchException {
         fetchSourceContext = normalizeFetchSourceContent(fetchSourceContext, gFields);
 
         boolean loadSource = (gFields != null && gFields.length > 0) || fetchSourceContext.fetchSource();
@@ -238,50 +239,24 @@ public class ShardGetService extends AbstractIndexShardComponent {
                         } else if (field.equals(SizeFieldMapper.NAME) && docMapper.rootMapper(SizeFieldMapper.class).fieldType().stored()) {
                             value = source.source.length();
                         } else {
-                            if (field.contains("_source.")) {
-                                if (searchLookup == null) {
-                                    searchLookup = new SearchLookup(mapperService, fieldDataService, new String[]{type});
-                                }
-                                if (sourceAsMap == null) {
-                                    sourceAsMap = SourceLookup.sourceAsMap(source.source);
-                                }
-                                SearchScript searchScript = scriptService.search(searchLookup, "mvel", field, null);
-                                // we can't do this, only allow to run scripts against the source
-                                //searchScript.setNextReader(docIdAndVersion.reader);
-                                //searchScript.setNextDocId(docIdAndVersion.docId);
+                            if (searchLookup == null) {
+                                searchLookup = new SearchLookup(mapperService, fieldDataService, new String[]{type});
+                                searchLookup.source().setNextSource(source.source);
+                            }
 
-                                // but, we need to inject the parsed source into the script, so it will be used...
-                                searchScript.setNextSource(sourceAsMap);
-
-                                try {
-                                    value = searchScript.run();
-                                } catch (RuntimeException e) {
-                                    if (logger.isTraceEnabled()) {
-                                        logger.trace("failed to execute get request script field [{}]", e, field);
+                            FieldMapper<?> x = docMapper.mappers().smartNameFieldMapper(field);
+                            if (x == null) {
+                                if (docMapper.objectMappers().get(field) != null) {
+                                    // Only fail if we know it is a object field, missing paths / fields shouldn't fail.
+                                    throw new ElasticsearchIllegalArgumentException("field [" + field + "] isn't a leaf field");
+                                }
+                            } else if (docMapper.sourceMapper().enabled() || x.fieldType().stored()) {
+                                List<Object> values = searchLookup.source().extractRawValues(field);
+                                if (!values.isEmpty()) {
+                                    for (int i = 0; i < values.size(); i++) {
+                                        values.set(i, x.valueForSearch(values.get(i)));
                                     }
-                                    // ignore
-                                }
-                            } else {
-                                if (searchLookup == null) {
-                                    searchLookup = new SearchLookup(mapperService, fieldDataService, new String[]{type});
-                                    searchLookup.source().setNextSource(source.source);
-                                }
-
-                                FieldMapper<?> x = docMapper.mappers().smartNameFieldMapper(field);
-                                // only if the field is stored or source is enabled we should add it..
-                                if (docMapper.sourceMapper().enabled() || x == null || x.fieldType().stored()) {
-                                    value = searchLookup.source().extractValue(field);
-                                    // normalize the data if needed (mainly for binary fields, to convert from base64 strings to bytes)
-                                    if (value != null && x != null) {
-                                        if (value instanceof List) {
-                                            List list = (List) value;
-                                            for (int i = 0; i < list.size(); i++) {
-                                                list.set(i, x.valueForSearch(list.get(i)));
-                                            }
-                                        } else {
-                                            value = x.valueForSearch(value);
-                                        }
-                                    }
+                                    value = values;
                                 }
                             }
                         }
@@ -329,7 +304,7 @@ public class ShardGetService extends AbstractIndexShardComponent {
                         try {
                             sourceToBeReturned = XContentFactory.contentBuilder(sourceContentType).map(filteredSource).bytes();
                         } catch (IOException e) {
-                            throw new ElasticSearchException("Failed to get type [" + type + "] and id [" + id + "] with includes/excludes set", e);
+                            throw new ElasticsearchException("Failed to get type [" + type + "] and id [" + id + "] with includes/excludes set", e);
                         }
                     }
                 }
@@ -350,13 +325,13 @@ public class ShardGetService extends AbstractIndexShardComponent {
             try {
                 docIdAndVersion.context.reader().document(docIdAndVersion.docId, fieldVisitor);
             } catch (IOException e) {
-                throw new ElasticSearchException("Failed to get type [" + type + "] and id [" + id + "]", e);
+                throw new ElasticsearchException("Failed to get type [" + type + "] and id [" + id + "]", e);
             }
             source = fieldVisitor.source();
 
             if (!fieldVisitor.fields().isEmpty()) {
                 fieldVisitor.postProcess(docMapper);
-                fields = new HashMap<String, GetField>(fieldVisitor.fields().size());
+                fields = new HashMap<>(fieldVisitor.fields().size());
                 for (Map.Entry<String, List<Object>> entry : fieldVisitor.fields().entrySet()) {
                     fields.put(entry.getKey(), new GetField(entry.getKey(), entry.getValue()));
                 }
@@ -368,45 +343,26 @@ public class ShardGetService extends AbstractIndexShardComponent {
             SearchLookup searchLookup = null;
             for (String field : gFields) {
                 Object value = null;
-                if (field.contains("_source.") || field.contains("doc[")) {
+                FieldMappers x = docMapper.mappers().smartName(field);
+                if (x == null) {
+                    if (docMapper.objectMappers().get(field) != null) {
+                        // Only fail if we know it is a object field, missing paths / fields shouldn't fail.
+                        throw new ElasticsearchIllegalArgumentException("field [" + field + "] isn't a leaf field");
+                    }
+                } else if (!x.mapper().fieldType().stored()) {
                     if (searchLookup == null) {
                         searchLookup = new SearchLookup(mapperService, fieldDataService, new String[]{type});
-                        searchLookup.source().setNextSource(source);
                         searchLookup.setNextReader(docIdAndVersion.context);
+                        searchLookup.source().setNextSource(source);
                         searchLookup.setNextDocId(docIdAndVersion.docId);
                     }
-                    SearchScript searchScript = scriptService.search(searchLookup, "mvel", field, null);
-                    searchScript.setNextReader(docIdAndVersion.context);
-                    searchScript.setNextDocId(docIdAndVersion.docId);
-                    try {
-                        value = searchScript.run();
-                    } catch (RuntimeException e) {
-                        if (logger.isTraceEnabled()) {
-                            logger.trace("failed to execute get request script field [{}]", e, field);
+
+                    List<Object> values = searchLookup.source().extractRawValues(field);
+                    if (!values.isEmpty()) {
+                        for (int i = 0; i < values.size(); i++) {
+                            values.set(i, x.mapper().valueForSearch(values.get(i)));
                         }
-                        // ignore
-                    }
-                } else {
-                    FieldMappers x = docMapper.mappers().smartName(field);
-                    if (x == null || !x.mapper().fieldType().stored()) {
-                        if (searchLookup == null) {
-                            searchLookup = new SearchLookup(mapperService, fieldDataService, new String[]{type});
-                            searchLookup.setNextReader(docIdAndVersion.context);
-                            searchLookup.source().setNextSource(source);
-                            searchLookup.setNextDocId(docIdAndVersion.docId);
-                        }
-                        value = searchLookup.source().extractValue(field);
-                        // normalize the data if needed (mainly for binary fields, to convert from base64 strings to bytes)
-                        if (value != null && x != null) {
-                            if (value instanceof List) {
-                                List list = (List) value;
-                                for (int i = 0; i < list.size(); i++) {
-                                    list.set(i, x.mapper().valueForSearch(list.get(i)));
-                                }
-                            } else {
-                                value = x.mapper().valueForSearch(value);
-                            }
-                        }
+                        value = values;
                     }
                 }
 
@@ -435,7 +391,7 @@ public class ShardGetService extends AbstractIndexShardComponent {
             try {
                 source = XContentFactory.contentBuilder(sourceContentType).map(filteredSource).bytes();
             } catch (IOException e) {
-                throw new ElasticSearchException("Failed to get type [" + type + "] and id [" + id + "] with includes/excludes set", e);
+                throw new ElasticsearchException("Failed to get type [" + type + "] and id [" + id + "] with includes/excludes set", e);
             }
         }
 

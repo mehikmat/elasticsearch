@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,6 +19,7 @@
 
 package org.elasticsearch.index.mapper;
 
+import com.carrotsearch.hppc.ObjectOpenHashSet;
 import com.google.common.base.Charsets;
 import com.google.common.collect.*;
 import org.apache.lucene.analysis.Analyzer;
@@ -30,7 +31,7 @@ import org.apache.lucene.queries.TermsFilter;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.Filter;
 import org.apache.lucene.util.BytesRef;
-import org.elasticsearch.ElasticSearchGenerationException;
+import org.elasticsearch.ElasticsearchGenerationException;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.collect.ImmutableOpenMap;
 import org.elasticsearch.common.compress.CompressedString;
@@ -75,6 +76,10 @@ import static org.elasticsearch.index.mapper.DocumentMapper.MergeFlags.mergeFlag
 public class MapperService extends AbstractIndexComponent implements Iterable<DocumentMapper> {
 
     public static final String DEFAULT_MAPPING = "_default_";
+    private static ObjectOpenHashSet<String> META_FIELDS = ObjectOpenHashSet.from(
+            "_uid", "_id", "_type", "_all", "_analyzer", "_boost", "_parent", "_routing", "_index",
+            "_size", "_timestamp", "_ttl"
+    );
 
     private final AnalysisService analysisService;
     private final IndexFieldDataService fieldDataService;
@@ -104,7 +109,7 @@ public class MapperService extends AbstractIndexComponent implements Iterable<Do
     private final SmartIndexNameSearchAnalyzer searchAnalyzer;
     private final SmartIndexNameSearchQuoteAnalyzer searchQuoteAnalyzer;
 
-    private final List<DocumentTypeListener> typeListeners = new CopyOnWriteArrayList<DocumentTypeListener>();
+    private final List<DocumentTypeListener> typeListeners = new CopyOnWriteArrayList<>();
 
     @Inject
     public MapperService(Index index, @IndexSettings Settings indexSettings, Environment environment, AnalysisService analysisService, IndexFieldDataService fieldDataService,
@@ -191,10 +196,10 @@ public class MapperService extends AbstractIndexComponent implements Iterable<Do
                     "}";
         }
 
-        if (logger.isDebugEnabled()) {
-            logger.debug("using dynamic[{}], default mapping: default_mapping_location[{}], loaded_from[{}], default percolator mapping: location[{}], loaded_from[{}]", dynamic, defaultMappingLocation, defaultMappingUrl, percolatorMappingLocation, percolatorMappingUrl);
-        } else if (logger.isTraceEnabled()) {
+        if (logger.isTraceEnabled()) {
             logger.trace("using dynamic[{}], default mapping: default_mapping_location[{}], loaded_from[{}] and source[{}], default percolator mapping: location[{}], loaded_from[{}] and source[{}]", dynamic, defaultMappingLocation, defaultMappingUrl, defaultMappingSource, percolatorMappingLocation, percolatorMappingUrl, defaultPercolatorMappingSource);
+        } else if (logger.isDebugEnabled()) {
+            logger.debug("using dynamic[{}], default mapping: default_mapping_location[{}], loaded_from[{}], default percolator mapping: location[{}], loaded_from[{}]", dynamic, defaultMappingLocation, defaultMappingUrl, percolatorMappingLocation, percolatorMappingUrl);
         }
     }
 
@@ -241,7 +246,7 @@ public class MapperService extends AbstractIndexComponent implements Iterable<Do
             try {
                 defaultMappingSource = mappingSource.string();
             } catch (IOException e) {
-                throw new ElasticSearchGenerationException("failed to un-compress", e);
+                throw new ElasticsearchGenerationException("failed to un-compress", e);
             }
             return mapper;
         } else {
@@ -286,7 +291,7 @@ public class MapperService extends AbstractIndexComponent implements Iterable<Do
             } else {
                 FieldMapperListener.Aggregator fieldMappersAgg = new FieldMapperListener.Aggregator();
                 mapper.traverse(fieldMappersAgg);
-                addFieldMappers(fieldMappersAgg.mappers.toArray(new FieldMapper[fieldMappersAgg.mappers.size()]));
+                addFieldMappers(fieldMappersAgg.mappers);
                 mapper.addFieldMapperListener(fieldMapperListener, false);
 
                 ObjectMapperListener.Aggregator objectMappersAgg = new ObjectMapperListener.Aggregator();
@@ -295,7 +300,7 @@ public class MapperService extends AbstractIndexComponent implements Iterable<Do
                 mapper.addObjectMapperListener(objectMapperListener, false);
 
                 for (DocumentTypeListener typeListener : typeListeners) {
-                    typeListener.beforeCreate(mapper.type());
+                    typeListener.beforeCreate(mapper);
                 }
                 mappers = newMapBuilder(mappers).put(mapper.type(), mapper).map();
                 return mapper;
@@ -323,9 +328,9 @@ public class MapperService extends AbstractIndexComponent implements Iterable<Do
         }
     }
 
-    private void addFieldMappers(FieldMapper[] fieldMappers) {
+    private void addFieldMappers(Iterable<FieldMapper>  fieldMappers) {
         synchronized (mappersMutex) {
-            this.fieldMappers.addNewMappers(Arrays.asList(fieldMappers));
+            this.fieldMappers.addNewMappers(fieldMappers);
         }
     }
 
@@ -339,7 +344,7 @@ public class MapperService extends AbstractIndexComponent implements Iterable<Do
             mappers = newMapBuilder(mappers).remove(type).map();
             removeObjectAndFieldMappers(docMapper);
             for (DocumentTypeListener typeListener : typeListeners) {
-                typeListener.afterRemove(type);
+                typeListener.afterRemove(docMapper);
             }
         }
     }
@@ -841,6 +846,13 @@ public class MapperService extends AbstractIndexComponent implements Iterable<Do
         return null;
     }
 
+    /**
+     * @return Whether a field is a metadata field.
+     */
+    public static boolean isMetadataField(String fieldName) {
+        return META_FIELDS.contains(fieldName);
+    }
+
     public static class SmartNameObjectMapper {
         private final ObjectMapper mapper;
         private final DocumentMapper docMapper;
@@ -1033,11 +1045,11 @@ public class MapperService extends AbstractIndexComponent implements Iterable<Do
     class InternalFieldMapperListener extends FieldMapperListener {
         @Override
         public void fieldMapper(FieldMapper fieldMapper) {
-            addFieldMappers(new FieldMapper[]{fieldMapper});
+            addFieldMappers(Arrays.asList(fieldMapper));
         }
 
         @Override
-        public void fieldMappers(FieldMapper... fieldMappers) {
+        public void fieldMappers(Iterable<FieldMapper>  fieldMappers) {
             addFieldMappers(fieldMappers);
         }
     }

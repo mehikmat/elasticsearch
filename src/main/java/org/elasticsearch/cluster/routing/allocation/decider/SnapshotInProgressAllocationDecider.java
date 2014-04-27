@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -33,6 +33,8 @@ import org.elasticsearch.node.settings.NodeSettingsService;
  * are currently been snapshotted to be moved to other nodes.
  */
 public class SnapshotInProgressAllocationDecider extends AllocationDecider {
+
+    public static final String NAME = "snapshot_in_progress";
 
     /**
      * Disables relocation of shards that are currently being snapshotted.
@@ -99,18 +101,19 @@ public class SnapshotInProgressAllocationDecider extends AllocationDecider {
             SnapshotMetaData snapshotMetaData = allocation.metaData().custom(SnapshotMetaData.TYPE);
             if (snapshotMetaData == null) {
                 // Snapshots are not running
-                return Decision.YES;
+                return allocation.decision(Decision.YES, NAME, "no snapshots are currently running");
             }
 
             for (SnapshotMetaData.Entry snapshot : snapshotMetaData.entries()) {
                 SnapshotMetaData.ShardSnapshotStatus shardSnapshotStatus = snapshot.shards().get(shardRouting.shardId());
                 if (shardSnapshotStatus != null && !shardSnapshotStatus.state().completed() && shardSnapshotStatus.nodeId() != null && shardSnapshotStatus.nodeId().equals(shardRouting.currentNodeId())) {
                     logger.trace("Preventing snapshotted shard [{}] to be moved from node [{}]", shardRouting.shardId(), shardSnapshotStatus.nodeId());
-                    return Decision.NO;
+                    return allocation.decision(Decision.NO, NAME, "snapshot for shard [%s] is currently running on node [%s]",
+                            shardRouting.shardId(), shardSnapshotStatus.nodeId());
                 }
             }
         }
-        return Decision.YES;
+        return allocation.decision(Decision.YES, NAME, "shard not primary or relocation disabled");
     }
 
 }

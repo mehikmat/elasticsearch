@@ -1,11 +1,11 @@
 /*
- * Licensed to ElasticSearch and Shay Banon under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership. ElasticSearch licenses this
- * file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to Elasticsearch under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,9 +19,11 @@
 
 package org.elasticsearch.rest.action.support;
 
-import org.elasticsearch.ElasticSearchIllegalArgumentException;
+import org.elasticsearch.ElasticsearchIllegalArgumentException;
 import org.elasticsearch.action.ShardOperationFailedException;
+import org.elasticsearch.action.support.QuerySourceBuilder;
 import org.elasticsearch.action.support.broadcast.BroadcastOperationResponse;
+import org.elasticsearch.common.bytes.BytesArray;
 import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentBuilderString;
@@ -81,7 +83,7 @@ public class RestActions {
         builder.endObject();
     }
 
-    public static BytesReference parseQuerySource(RestRequest request) {
+    public static QuerySourceBuilder parseQuerySource(RestRequest request) {
         String queryString = request.param("q");
         if (queryString == null) {
             return null;
@@ -96,9 +98,28 @@ public class RestActions {
             } else if ("AND".equals(defaultOperator)) {
                 queryBuilder.defaultOperator(QueryStringQueryBuilder.Operator.AND);
             } else {
-                throw new ElasticSearchIllegalArgumentException("Unsupported defaultOperator [" + defaultOperator + "], can either be [OR] or [AND]");
+                throw new ElasticsearchIllegalArgumentException("Unsupported defaultOperator [" + defaultOperator + "], can either be [OR] or [AND]");
             }
         }
-        return queryBuilder.buildAsBytes();
+        return new QuerySourceBuilder().setQuery(queryBuilder);
+    }
+
+    /**
+     * Get Rest content from either payload or source parameter
+     * @param request Rest request
+     * @return rest content
+     */
+    public static BytesReference getRestContent(RestRequest request) {
+        assert request != null;
+
+        BytesReference content = request.content();
+        if (!request.hasContent()) {
+            String source = request.param("source");
+            if (source != null) {
+                content = new BytesArray(source);
+            }
+        }
+
+        return content;
     }
 }
